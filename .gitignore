@@ -1,58 +1,6 @@
-# -----------------------------
-# Python cache & bytecode
-# -----------------------------
-__pycache__/
-*.py[cod]
-*$py.class
-
-# -----------------------------
-# Virtual environments
-# -----------------------------
-venv/
-env/
-.venv/
-
-# -----------------------------
-# Environment & secrets
-# -----------------------------
 .env
-*.env
-config.json
-
-# -----------------------------
-# Dataset & uploads
-# -----------------------------
-dataset/
-uploads/
-*.zip
-
-# -----------------------------
-# Models (large files)
-# -----------------------------
-models/
-*.h5
-*.pt
-*.ckpt
-
-# -----------------------------
-# Streamlit cache & logs
-# -----------------------------
-.streamlit/
-logs/
-
-# -----------------------------
-# Jupyter Notebook checkpoints
-# -----------------------------
-.ipynb_checkpoints/
-
-# -----------------------------
-# IDE / Editor settings
-# -----------------------------
-.vscode/
-.idea/
-
-# -----------------------------
-# System files
-# -----------------------------
-.DS_Store
-Thumbs.db
+*.pyc
+__pycache__/
+users.json
+history.json
+models/*.h5
