@@ -40,16 +40,24 @@ def register_user(username, password, role):
     table = "farmers" if role.lower() == "farmer" else "admins"
     if supabase:
         try:
+            # Check if username exists
+            resp = supabase.table(table).select("*").eq("username", username).execute()
+            if resp.data:
+                st.warning(f"⚠ Username '{username}' already exists!")
+                return False
+            # Insert new user
             supabase.table(table).insert({
                 "username": username,
                 "password": hash_password(password),
                 "role": role
             }).execute()
-            st.success(f"✅ {role} registered successfully!")
+            st.success(f"✅ {role} '{username}' registered successfully!")
+            return True
         except Exception as e:
             st.error(f"Registration error: {e}")
     else:
         st.warning("⚠ Supabase not available")
+    return False
 
 def login_user(username, password, role):
     table = "farmers" if role.lower() == "farmer" else "admins"
@@ -163,7 +171,10 @@ elif choice == "Upload & Detect":
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
                 st.success(f"Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                save_detection(st.session_state["user_id"], prediction, confidence, save_path)
+                if st.session_state["role"].lower() == "farmer":
+                    save_detection(st.session_state["user_id"], prediction, confidence, save_path)
+                else:
+                    st.warning("Admins cannot run detection directly.")
 
 # ---------- History ----------
 elif choice == "History":
@@ -175,11 +186,12 @@ elif choice == "History":
             try:
                 if st.session_state["role"].lower() == "farmer":
                     resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
-                else:
-                    resp = supabase.table("detection_records").select("*").order("timestamp", desc=True).execute()
+                else:  # Admin sees all farmers' records
+                    resp = supabase.table("detection_records").select("*", {"foreign_tables":["farmers"]}).order("timestamp", desc=True).execute()
                 if resp.data:
                     for rec in resp.data:
-                        st.write(f"🗓 {rec['timestamp']} → {rec['prediction']} ({rec['confidence']})")
+                        farmer_name = rec.get("farmer_id")
+                        st.write(f"🗓 Farmer ID: {farmer_name} → {rec['prediction']} ({rec['confidence']}) at {rec['timestamp']}")
                 else:
                     st.info("No records found.")
             except Exception as e:
