@@ -7,8 +7,7 @@ from datetime import datetime
 from PIL import Image
 import tensorflow as tf
 import numpy as np
-from supabase import create_client
-
+from supabase import create_client, Client
 st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
 st.title("🌱 Pest & Disease Detection System")
 
@@ -22,12 +21,16 @@ TABLE_ADMINS = "admins"
 
 # ---------- Supabase ----------
 supabase = None
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except:
-    supabase = None
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    supabase = None  # fallback
+    print("Supabase connection failed:", e)
+
 
 # ---------- Helpers ----------
 def load_json(path):
@@ -256,3 +259,4 @@ if st.button("Logout"):
     st.session_state.role="Farmer"
     st.session_state.user_id=None
     st.experimental_rerun()
+
