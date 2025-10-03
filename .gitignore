@@ -1,5 +1,5 @@
 # -----------------------------
-# Python cache and bytecode
+# Python cache & bytecode
 # -----------------------------
 __pycache__/
 *.py[cod]
@@ -17,10 +17,10 @@ env/
 # -----------------------------
 .env
 *.env
-config.json        # contains Supabase URL & KEY (sensitive)
+config.json
 
 # -----------------------------
-# Dataset and uploads
+# Dataset & uploads
 # -----------------------------
 dataset/
 uploads/
@@ -35,7 +35,7 @@ models/
 *.ckpt
 
 # -----------------------------
-# Streamlit cache and logs
+# Streamlit cache & logs
 # -----------------------------
 .streamlit/
 logs/
