@@ -16,7 +16,7 @@ connection_status = "❌ Not Connected"
 try:
     if SUPABASE_URL and SUPABASE_KEY:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # test connection by selecting
+        # test connection
         _ = supabase.table("farmers").select("*").limit(1).execute()
         connection_status = "✅ Connected to Supabase"
     else:
@@ -35,7 +35,7 @@ def hash_password(password):
 # Auth Functions
 # --------------------------
 def local_login(username, password, role):
-    table = "farmers" if role == "farmer" else "admins"
+    table = "farmers" if role.lower() == "farmer" else "admins"
     if supabase:
         try:
             resp = supabase.table(table).select("*").eq("username", username).execute()
@@ -47,7 +47,7 @@ def local_login(username, password, role):
     return False
 
 def register_user(username, password, role):
-    table = "farmers" if role == "farmer" else "admins"
+    table = "farmers" if role.lower() == "farmer" else "admins"
     if supabase:
         try:
             supabase.table(table).insert({
@@ -67,11 +67,11 @@ def save_detection(farmer_username, prediction, confidence, image_url):
     if supabase:
         try:
             supabase.table("detection_records").insert({
-                "farmer_id": farmer_username,
+                "farmer_username": farmer_username,  # text instead of integer
                 "prediction": prediction,
                 "confidence": confidence,
                 "image_url": image_url,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.utcnow().isoformat()
             }).execute()
             st.success("✅ Detection saved to Supabase!")
         except Exception as e:
@@ -83,14 +83,12 @@ def save_detection(farmer_username, prediction, confidence, image_url):
 # Streamlit UI
 # --------------------------
 st.title("🌱 Real-time Pest & Disease Detection System")
-
-# Show connection status
 st.info(f"Supabase Status: {connection_status}")
 
 menu = ["Login", "Register", "Upload & Detect", "History"]
 choice = st.sidebar.selectbox("Menu", menu)
 
-role = st.sidebar.radio("Role", ["farmer", "admin"])
+role = st.sidebar.radio("Role", ["Farmer", "Admin"])
 
 if choice == "Login":
     st.subheader("🔐 Login")
@@ -118,10 +116,9 @@ elif choice == "Upload & Detect":
         st.subheader("📤 Upload Crop Image for Detection")
         uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
         if uploaded_file is not None:
-            st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-
+            st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
             if st.button("Run Detection"):
-                # 🔮 Fake detection result (replace with real ML model)
+                # 🔮 Fake detection result (replace with ML model)
                 prediction = "Pest Detected"
                 confidence = 0.92
                 image_url = f"https://fake-bucket/{uploaded_file.name}"
@@ -136,7 +133,7 @@ elif choice == "History":
         st.subheader("📜 Detection History")
         if supabase:
             try:
-                resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user"]).execute()
+                resp = supabase.table("detection_records").select("*").eq("farmer_username", st.session_state["user"]).execute()
                 if resp.data:
                     for rec in resp.data:
                         st.write(f"🗓 {rec['timestamp']} → {rec['prediction']} ({rec['confidence']})")
