@@ -1,0 +1,2 @@
+SUPABASE_URL="https://apcwqymglyknidotlrjj.supabase.co"
+    SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwY3dxeW1nbHlrbmlkb3RscmpqIiwicm9sZSI6ImFubEsiLCJpYXQiOjE3NTgxNzA4NjYsImV4cCI6MjA3Mzc0Njg2Nn0.L1GunEivsD6Hyw1KMT9icwgibU995lCU9S4tLXPmNcM"
