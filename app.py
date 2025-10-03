@@ -246,4 +246,6 @@ if st.button("🚪 Logout"):
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["user_id"] = None
-    st.experimental_rerun()
+    st.rerun()
+
+
