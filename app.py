@@ -15,7 +15,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("❌ Supabase credentials missing! Please set SUPABASE_URL and SUPABASE_KEY in .env")
+    st.error("❌ Supabase credentials missing! Set SUPABASE_URL and SUPABASE_KEY in .env")
     st.stop()
 
 # ---------- Connect to Supabase ----------
@@ -37,7 +37,7 @@ if os.path.exists(MODEL_PATH):
     except Exception as e:
         st.error(f"❌ Failed to load model: {e}")
 else:
-    st.warning("⚠️ Model not found. Upload your trained model to 'models/cnn_model.h5'")
+    st.warning("⚠️ Model not found. Upload trained model to 'models/cnn_model.h5'")
 
 def predict_image(path: str):
     if model_loaded and model:
@@ -48,13 +48,12 @@ def predict_image(path: str):
         idx = probs.argmax()
         label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
         return label, float(probs[idx])
-    # fallback simple prediction
     width = Image.open(path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
     if width % 3 == 1: return "Pest-Affected", 0.85
     return "Disease-Affected", 0.90
 
-# ---------- Helpers ----------
+# ---------- Helper ----------
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
@@ -86,23 +85,22 @@ if not st.session_state.logged_in:
         hashed_pw = hash_password(password_input)
         try:
             if choice == "Register":
-                # Register Admin
                 if role_input == "Admin":
-                    res = supabase.table("admins").insert({
+                    supabase.table("admins").insert({
                         "name": username_input,
                         "email": username_input,
                         "password": hashed_pw,
                         "role": role_input
                     }).execute()
-                    st.success(f"✅ Admin registered in Supabase")
-                else:  # Register Farmer
+                    st.success("✅ Admin registered in Supabase")
+                else:
                     res = supabase.table("farmers").insert({
                         "username": username_input,
                         "email": username_input,
                         "password": hashed_pw,
                         "role": role_input
                     }).execute()
-                    st.success(f"✅ Farmer registered in Supabase")
+                    st.success("✅ Farmer registered in Supabase")
             else:  # Login
                 table = "admins" if role_input=="Admin" else "farmers"
                 res = supabase.table(table).select("*").eq("email", username_input).execute()
@@ -132,16 +130,15 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             color = "#4CAF50" if pred=="Healthy" else ("#FF9800" if "Pest" in pred else "#F44336")
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>", unsafe_allow_html=True)
 
-            # Insert into detection_records
+            # Insert detection
             try:
-                payload = {
+                supabase.table("detection_records").insert({
                     "farmer_id": st.session_state.user_id,
                     "prediction": pred,
                     "confidence": float(conf),
                     "image_url": save_path,
                     "timestamp": datetime.utcnow().isoformat()
-                }
-                supabase.table("detection_records").insert(payload).execute()
+                }).execute()
                 st.success("✅ Detection saved in Supabase")
             except Exception as e:
                 st.error(f"❌ Could not save detection: {e}")
