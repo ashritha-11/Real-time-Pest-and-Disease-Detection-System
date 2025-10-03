@@ -1,15 +1,13 @@
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 
-# Use Streamlit secrets
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-supabase: Client | None = None
-
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    st.success("✅ Connected to Supabase!")
+    data = supabase.table("detection_records").select("*").limit(1).execute()
+    st.success("✅ Connected!")
+    st.write(data.data)
 except Exception as e:
-    st.error(f"Supabase connection failed: {e}")
-    supabase = None
+    st.error(f"Connection failed: {e}")
