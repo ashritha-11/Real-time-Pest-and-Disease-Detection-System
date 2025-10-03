@@ -1,7 +1,9 @@
 import streamlit as st
 from PIL import Image
-import torch
-from torchvision import transforms
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image as keras_image
+import numpy as np
 import json
 from supabase import create_client, Client
 from datetime import datetime
@@ -13,23 +15,25 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------- Paths ----------------
-MODEL_PATH = "models/pest_disease_model.pt"
+MODEL_PATH = "models/pest_disease_model.h5"  # Keras model
 CLASS_INDICES_PATH = "models/class_indices.json"
 
 # ---------------- Load Model ----------------
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = torch.load(MODEL_PATH, map_location=device)
-model.eval()
+model = load_model(MODEL_PATH)
 
 # ---------------- Load Class Indices ----------------
 with open(CLASS_INDICES_PATH, "r") as f:
     class_indices = json.load(f)
 
-# ---------------- Transform ----------------
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-])
+# ---------------- Transform / Preprocess ----------------
+IMG_SIZE = (224, 224)
+
+def preprocess_image(img):
+    img = img.resize(IMG_SIZE)
+    img_array = keras_image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    img_array = img_array / 255.0  # Normalize
+    return img_array
 
 # ---------------- Helper Functions ----------------
 def hash_password(password):
@@ -129,15 +133,13 @@ else:
     # ---------------- Upload Image & Predict ----------------
     uploaded_file = st.file_uploader("Upload Crop Image", type=["jpg", "jpeg", "png"])
     if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+        img = Image.open(uploaded_file).convert("RGB")
+        st.image(img, caption="Uploaded Image", use_column_width=True)
 
-        img_tensor = transform(image).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            outputs = model(img_tensor)
-            _, pred = torch.max(outputs, 1)
-            label = class_indices[str(pred.item())]
+        img_array = preprocess_image(img)
+        pred_probs = model.predict(img_array)
+        pred_index = np.argmax(pred_probs)
+        label = class_indices[str(pred_index)]
 
         st.success(f"Detected: **{label}**")
 
