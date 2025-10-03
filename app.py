@@ -5,28 +5,36 @@ import json
 import hashlib
 from datetime import datetime
 from PIL import Image
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
-# ---------- Supabase ----------
-try:
-    from supabase import create_client
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
-    supabase = None  # Hide all errors
+# Supabase
+from supabase import create_client, Client
 
-# ---------- Config ----------
+# ---------- Secrets ----------
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+
+# ---------- Streamlit config ----------
 st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
 st.title("🌱 Pest & Disease Detection System")
 
+# ---------- Files ----------
 USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 MODEL_PATH = "models/cnn_model.h5"
-TABLE_DETECTIONS = "detection_records"
+
 TABLE_FARMERS = "farmers"
 TABLE_ADMINS = "admins"
+TABLE_DETECTIONS = "detection_records"
+
+# ---------- Initialize Supabase ----------
+supabase: Client | None = None
+try:
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception:
+    supabase = None  # silently fail if Supabase cannot connect
 
 # ---------- JSON helpers ----------
 def load_json(path):
@@ -42,11 +50,10 @@ def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
-# ---------- Password hashing ----------
+# ---------- User management ----------
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-# ---------- Local user management ----------
 def local_register(username, password, role):
     users = load_json(USERS_FILE)
     if username in users:
@@ -58,9 +65,11 @@ def local_register(username, password, role):
 def local_login(username, password):
     users = load_json(USERS_FILE)
     user = users.get(username)
-    return user and user["password"] == hash_password(password)
+    if user and "password" in user:
+        return user["password"] == hash_password(password)
+    return False
 
-# ---------- Local history ----------
+# ---------- History ----------
 def add_local_history(username, image_name, prediction, confidence):
     history = load_json(HISTORY_FILE)
     if username not in history:
@@ -83,67 +92,27 @@ if os.path.exists(MODEL_PATH):
 
 def predict_image(path: str):
     if model:
-        img = Image.open(path).resize((224,224)).convert("RGB")
-        arr = np.array(img)/255.0
-        arr = arr.reshape((1,)+arr.shape)
-        probs = model.predict(arr)[0]
-        idx = probs.argmax()
-        label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
-        return label, float(probs[idx])
-    # Fallback dummy prediction
+        try:
+            img = Image.open(path).resize((224,224)).convert("RGB")
+            arr = np.array(img)/255.0
+            arr = arr.reshape((1,)+arr.shape)
+            probs = model.predict(arr)[0]
+            idx = probs.argmax()
+            label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
+            return label, float(probs[idx])
+        except:
+            pass
+    # fallback dummy prediction
     width = Image.open(path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
     if width % 3 == 1: return "Pest-Affected", 0.85
     return "Disease-Affected", 0.90
 
-# ---------- Supabase table creation ----------
-def create_table_if_missing(table_name, create_sql):
-    if supabase:
-        try:
-            # Try a dummy select to see if table exists
-            supabase.table(table_name).select("*").limit(1).execute()
-        except:
-            # Table missing → create
-            try:
-                supabase.rpc("sql", {"q": create_sql}).execute()
-            except:
-                pass  # silently ignore
-
-# Table SQL
-SQL_FARMERS = """
-create table if not exists public.farmers (
-    farmer_id serial primary key,
-    username text unique,
-    password text not null
-);
-"""
-SQL_ADMINS = """
-create table if not exists public.admins (
-    admin_id serial primary key,
-    username text unique,
-    password text not null
-);
-"""
-SQL_DETECTIONS = """
-create table if not exists public.detection_records (
-    id serial primary key,
-    farmer_id int references public.farmers(farmer_id),
-    prediction text not null,
-    confidence numeric not null,
-    image_url text not null,
-    timestamp timestamptz default now()
-);
-"""
-
-create_table_if_missing(TABLE_FARMERS, SQL_FARMERS)
-create_table_if_missing(TABLE_ADMINS, SQL_ADMINS)
-create_table_if_missing(TABLE_DETECTIONS, SQL_DETECTIONS)
-
 # ---------- Session ----------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
-    st.session_state.role = "Farmer"
+    st.session_state.role = ""
     st.session_state.user_id = None
 
 # ---------- Styles ----------
@@ -165,8 +134,17 @@ if not st.session_state.logged_in:
 
     if st.button("Submit"):
         if kind=="Register":
-            if local_register(username_input,password_input,role_input):
+            if local_register(username_input,password_input, role_input):
                 st.success("Registered locally. Please login.")
+                # Optional: Insert into Supabase table
+                if supabase:
+                    try:
+                        table_name = TABLE_FARMERS if role_input=="Farmer" else TABLE_ADMINS
+                        supabase.table(table_name).insert({
+                            "username": username_input,
+                            "password": hash_password(password_input)
+                        }).execute()
+                    except: pass
             else:
                 st.warning("Username already exists.")
         else:
@@ -174,7 +152,6 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in=True
                 st.session_state.username=username_input
                 st.session_state.role=role_input
-                st.session_state.user_id=None
                 st.success(f"Logged in locally as {username_input}")
             else:
                 st.error("Invalid credentials")
@@ -192,62 +169,58 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             add_local_history(st.session_state.username,uploaded.name,pred,conf)
             color="#4CAF50" if pred=="Healthy" else ("#FF9800" if "Pest" in pred else "#F44336")
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>",unsafe_allow_html=True)
-
             # Save to Supabase
             if supabase:
                 try:
                     supabase.table(TABLE_DETECTIONS).insert({
+                        "farmer_username": st.session_state.username,
                         "prediction": pred,
                         "confidence": float(conf),
                         "image_url": save_name,
                         "timestamp": datetime.utcnow().isoformat()
                     }).execute()
-                except:
-                    pass
+                except: pass
 
 # ---------- Admin UI ----------
 if st.session_state.logged_in and st.session_state.role=="Admin":
     st.subheader(f"👋 Admin Panel: {st.session_state.username}")
-    if supabase:
-        try:
-            records = supabase.table(TABLE_DETECTIONS).select("*").order("timestamp", desc=True).execute().data
-            for rec in records:
+    st.markdown("### All Detection Records (local + Supabase)")
+    # Show local history
+    history = load_json(HISTORY_FILE)
+    if history:
+        for user, recs in history.items():
+            for rec in reversed(recs):
                 color="#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
                 st.markdown(f"""
                     <div class="card">
-                    <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{rec.get('prediction','')}</span></p>
+                    <p><b>User:</b> {user}</p>
+                    <p><b>Image:</b> {rec.get('image')}</p>
+                    <p><b>Timestamp:</b> {rec.get('timestamp')}</p>
+                    <p><span class='prediction' style='background-color:{color}'>{rec.get('prediction')} ({rec.get('confidence',0.0)*100:.1f}%)</span></p>
+                    </div>
+                """,unsafe_allow_html=True)
+    # Optional: Fetch from Supabase
+    if supabase:
+        try:
+            supa_records = supabase.table(TABLE_DETECTIONS).select("*").order("timestamp", desc=True).execute()
+            for rec in supa_records.data:
+                color="#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
+                st.markdown(f"""
+                    <div class="card">
+                    <p><b>User:</b> {rec.get('farmer_username')}</p>
+                    <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{rec.get('prediction')}</span></p>
                     <p><b>Confidence:</b> {rec.get('confidence',0.0)*100:.1f}%</p>
                     <p><b>Image:</b> {rec.get('image_url','')}</p>
-                    <p><b>Timestamp:</b> {rec.get('timestamp','')}</p>
+                    <p><b>Timestamp:</b> {rec.get('timestamp')}</p>
                     </div>
-                """, unsafe_allow_html=True)
-        except:
-            st.info("No Supabase records found.")
-    else:
-        st.info("Supabase offline. Showing local history only.")
-
-# ---------- Local History ----------
-st.markdown("---")
-st.subheader("📜 Detection History (local)")
-history=load_json(HISTORY_FILE).get(st.session_state.username,[])
-if history:
-    for rec in reversed(history):
-        color="#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
-        st.markdown(f"""
-            <div class="card">
-            <p><b>Image:</b> {rec.get('image')}</p>
-            <p><b>Timestamp:</b> {rec.get('timestamp')}</p>
-            <p><span class='prediction' style='background-color:{color}'>{rec.get('prediction')} ({rec.get('confidence',0.0)*100:.1f}%)</span></p>
-            </div>
-        """,unsafe_allow_html=True)
-else:
-    st.info("No history found.")
+                """,unsafe_allow_html=True)
+        except: pass
 
 # ---------- Logout ----------
 st.markdown("---")
 if st.button("🚪 Logout"):
     st.session_state.logged_in=False
     st.session_state.username=""
-    st.session_state.role="Farmer"
+    st.session_state.role=""
     st.session_state.user_id=None
     st.experimental_rerun()
