@@ -4,16 +4,10 @@ import os
 import json
 import hashlib
 from datetime import datetime
-from dotenv import load_dotenv
 from supabase import create_client, Client
 from PIL import Image
 import tensorflow as tf
 import numpy as np
-
-# ---------- Load environment ----------
-load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
 st.title("🌱 Pest & Disease Detection System")
@@ -22,18 +16,18 @@ USERS_FILE = "users.json"
 HISTORY_FILE = "history.json"
 MODEL_PATH = "models/cnn_model.h5"
 TABLE_NAME = "detection_records"
+FARMERS_TABLE = "farmers"
+ADMINS_TABLE = "admins"
 
-# ---------- Initialize Supabase ----------
-supabase: Client | None = None
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        st.success("✅ Connected to Supabase!")
-    except Exception:
-        print("Supabase connection failed. Using local storage.")
-        supabase = None
-else:
-    st.info("Supabase credentials not set — using local storage.")
+# ---------- Load Supabase from secrets ----------
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    st.success("✅ Connected to Supabase!")
+except Exception as e:
+    st.warning("Supabase connection failed. Using local storage only.")
+    supabase = None
 
 # ---------- JSON helper ----------
 def load_json(path):
@@ -49,15 +43,51 @@ def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
-# ---------- Check table existence ----------
-def table_exists(table_name: str) -> bool:
+# ---------- Supabase tables ----------
+def create_tables():
     if not supabase:
-        return False
+        return
     try:
-        supabase.table(table_name).select("*").limit(1).execute()
-        return True
-    except:
-        return False
+        # Farmers table
+        sql_farmers = f"""
+        create table if not exists public.{FARMERS_TABLE} (
+            farmer_id serial primary key,
+            username text unique not null,
+            password text not null,
+            created_at timestamptz default now()
+        );
+        """
+        supabase.rpc("sql", {"query": sql_farmers}).execute()
+        
+        # Admins table
+        sql_admins = f"""
+        create table if not exists public.{ADMINS_TABLE} (
+            admin_id serial primary key,
+            username text unique not null,
+            password text not null,
+            created_at timestamptz default now()
+        );
+        """
+        supabase.rpc("sql", {"query": sql_admins}).execute()
+
+        # Detection records table
+        sql_detection = f"""
+        create table if not exists public.{TABLE_NAME} (
+            id serial primary key,
+            farmer_id int references public.{FARMERS_TABLE}(farmer_id),
+            prediction text not null,
+            confidence numeric not null,
+            image_url text not null,
+            timestamp timestamptz default now()
+        );
+        """
+        supabase.rpc("sql", {"query": sql_detection}).execute()
+        st.info(f"✅ Tables '{FARMERS_TABLE}', '{ADMINS_TABLE}', and '{TABLE_NAME}' are ready in Supabase.")
+    except Exception as e:
+        st.warning(f"Could not create tables: {e}")
+
+if supabase:
+    create_tables()
 
 # ---------- User management ----------
 def hash_password(pw: str) -> str:
@@ -88,7 +118,7 @@ def add_local_history(username, image_name, prediction, confidence):
     })
     save_json(HISTORY_FILE, history)
 
-# ---------- Load Model ----------
+# ---------- Model ----------
 model_loaded = False
 model = None
 if os.path.exists(MODEL_PATH):
@@ -100,14 +130,16 @@ if os.path.exists(MODEL_PATH):
 
 def predict_image(path: str):
     if model_loaded and model:
-        img = Image.open(path).resize((224,224)).convert("RGB")
-        arr = np.array(img)/255.0
-        arr = np.expand_dims(arr, axis=0)
-        probs = model.predict(arr)[0]
-        idx = int(np.argmax(probs))
-        label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
-        return label, float(probs[idx])
-    # fallback dummy prediction
+        try:
+            img = Image.open(path).resize((224,224)).convert("RGB")
+            arr = np.array(img)/255.0
+            arr = arr.reshape((1,)+arr.shape)
+            probs = model.predict(arr)[0]
+            idx = probs.argmax()
+            label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
+            return label, float(probs[idx])
+        except:
+            pass
     width = Image.open(path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
     if width % 3 == 1: return "Pest-Affected", 0.85
@@ -168,33 +200,24 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>",unsafe_allow_html=True)
 
             # Save to Supabase
-            if supabase and table_exists(TABLE_NAME):
+            if supabase:
                 try:
-                    payload={"prediction":pred,"confidence":float(conf),"image_url":save_name,"timestamp":datetime.utcnow().isoformat()}
-                    if st.session_state.user_id:
-                        payload["farmer_id"]=st.session_state.user_id
+                    # Look up farmer_id
+                    farmer_id = None
+                    res = supabase.table(FARMERS_TABLE).select("farmer_id").eq("username", st.session_state.username).execute()
+                    if res.data:
+                        farmer_id = res.data[0]["farmer_id"]
+                    payload={"prediction":pred,"confidence":float(conf),"image_url":save_name,"timestamp":datetime.utcnow().isoformat(),"farmer_id":farmer_id}
                     supabase.table(TABLE_NAME).insert(payload).execute()
                     st.success("✅ Detection saved in Supabase")
                 except Exception as e:
                     st.warning(f"Could not save detection to Supabase: {e}")
-            else:
-                st.info("Supabase table 'detection_records' missing or offline. Please create it using SQL (see below):")
-                st.code("""
-create table if not exists public.detection_records (
-    id serial primary key,
-    farmer_id int references public.farmers(farmer_id),
-    prediction text not null,
-    confidence numeric not null,
-    image_url text not null,
-    timestamp timestamptz default now()
-);
-                """)
 
 # ---------- Admin UI ----------
 if st.session_state.logged_in and st.session_state.role=="Admin":
     st.subheader(f"👋 Admin Panel: {st.session_state.username}")
     st.markdown("### All Detection Records")
-    if supabase and table_exists(TABLE_NAME):
+    if supabase:
         try:
             records_res = supabase.table(TABLE_NAME).select("*").order("timestamp", desc=True).execute()
             records = records_res.data
@@ -214,8 +237,6 @@ if st.session_state.logged_in and st.session_state.role=="Admin":
                 st.info("No detection records found in Supabase.")
         except Exception as e:
             st.warning(f"Could not fetch detection records: {e}")
-    else:
-        st.info("Supabase table 'detection_records' missing or offline. Admin cannot view records.")
 
 # ---------- Local History ----------
 st.markdown("---")
