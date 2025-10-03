@@ -11,8 +11,9 @@ import numpy as np
 
 # ---------- Load environment ----------
 load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     st.error("❌ Supabase credentials missing! Set SUPABASE_URL and SUPABASE_KEY in .env")
@@ -173,3 +174,4 @@ if st.button("🚪 Logout"):
     st.session_state.role = ""
     st.session_state.user_id = None
     st.experimental_rerun()
+
