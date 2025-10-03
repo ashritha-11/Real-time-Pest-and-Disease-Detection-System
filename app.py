@@ -6,6 +6,7 @@ from PIL import Image
 import numpy as np
 import tensorflow as tf
 import os
+import pandas as pd
 
 # --------------------------
 # Supabase Setup
@@ -19,6 +20,7 @@ connection_status = "❌ Not Connected"
 try:
     if SUPABASE_URL and SUPABASE_KEY:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Test connection
         _ = supabase.table("farmers").select("*").limit(1).execute()
         connection_status = "✅ Connected to Supabase"
     else:
@@ -112,6 +114,7 @@ def predict_image(file_path):
 # --------------------------
 # Streamlit UI
 # --------------------------
+st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
 st.title("🌱 Real-time Pest & Disease Detection System")
 st.info(f"Supabase Status: {connection_status}")
 
@@ -151,7 +154,7 @@ elif choice == "Register":
 elif choice == "Upload & Detect":
     if not st.session_state["user"]:
         st.warning("⚠ Please login first")
-    else:
+    elif st.session_state["role"].lower() == "farmer":
         st.subheader("📤 Upload Crop Image")
         uploaded_file = st.file_uploader("Choose an image...", type=["jpg","png","jpeg"])
         if uploaded_file:
@@ -173,32 +176,69 @@ elif choice == "History":
         st.subheader("📜 Detection History")
         if supabase:
             try:
-                # Map farmer_id to username for display
-                farmers_resp = supabase.table("farmers").select("*").execute()
-                farmers_map = {f["farmer_id"]: f["username"] for f in (farmers_resp.data or [])}
+                # Admin sees all farmers
+                if st.session_state["role"].lower() == "admin":
+                    farmers_resp = supabase.table("farmers").select("*").execute()
+                    farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
+                    selected_farmer = st.selectbox("Filter by Farmer", ["All"] + farmers_list)
+                    
+                    query = supabase.table("detection_records").select(
+                        "id, farmer_id, prediction, confidence, image_url, timestamp, farmers(username)"
+                    ).order("timestamp", desc=True)
 
-                if st.session_state["role"].lower() == "farmer":
-                    resp = supabase.table("detection_records") \
-                        .select("*") \
-                        .eq("farmer_id", st.session_state["user_id"]) \
-                        .order("timestamp", desc=True) \
-                        .execute()
-                else:  # Admin sees all records
-                    resp = supabase.table("detection_records") \
-                        .select("*") \
-                        .order("timestamp", desc=True) \
-                        .execute()
+                    if selected_farmer != "All":
+                        farmer_id = next((f["farmer_id"] for f in farmers_resp.data if f["username"]==selected_farmer), None)
+                        query = query.eq("farmer_id", farmer_id)
 
-                if resp.data:
-                    for rec in resp.data:
-                        farmer_name = farmers_map.get(rec["farmer_id"], f"ID {rec['farmer_id']}")
-                        st.write(f"🗓 {farmer_name} → {rec['prediction']} ({rec['confidence']}) at {rec['timestamp']}")
+                    resp = query.execute()
+                    records = resp.data if resp.data else []
+
+                    for rec in records:
+                        farmer_name = rec.get("farmers", {}).get("username", "Unknown")
+                        st.markdown(f"""
+                            **Farmer:** {farmer_name}  
+                            **Prediction:** {rec['prediction']}  
+                            **Confidence:** {rec['confidence']*100:.1f}%  
+                            **Timestamp:** {rec['timestamp']}  
+                        """)
+                        if rec.get("image_url"):
+                            st.image(rec["image_url"], width=200)
+                        st.markdown("---")
+
+                    # Download CSV
+                    if records:
+                        df = pd.DataFrame([
+                            {
+                                "Farmer": rec.get("farmers", {}).get("username", ""),
+                                "Prediction": rec["prediction"],
+                                "Confidence": rec["confidence"],
+                                "Image URL": rec["image_url"],
+                                "Timestamp": rec["timestamp"]
+                            }
+                            for rec in records
+                        ])
+                        csv = df.to_csv(index=False).encode("utf-8")
+                        st.download_button("📥 Download CSV Report", csv, file_name="detection_report.csv")
+                
+                # Farmer sees only their history
                 else:
-                    st.info("No records found.")
+                    resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
+                    if resp.data:
+                        for rec in resp.data:
+                            st.markdown(f"""
+                                **Prediction:** {rec['prediction']}  
+                                **Confidence:** {rec['confidence']*100:.1f}%  
+                                **Timestamp:** {rec['timestamp']}  
+                            """)
+                            if rec.get("image_url"):
+                                st.image(rec["image_url"], width=200)
+                            st.markdown("---")
+                    else:
+                        st.info("No records found.")
             except Exception as e:
                 st.error(f"History error: {e}")
         else:
-            st.warning("⚠ Supabase not available")
+            st.warning("⚠ Supabase not connected")
 
 # ---------- Logout ----------
 st.markdown("---")
