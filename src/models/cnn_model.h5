@@ -1,0 +1,1 @@
+MODEL_PATH = os.path.join("models", "cnn_model.h5")
