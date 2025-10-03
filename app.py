@@ -16,7 +16,6 @@ connection_status = "❌ Not Connected"
 try:
     if SUPABASE_URL and SUPABASE_KEY:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # test connection
         _ = supabase.table("farmers").select("*").limit(1).execute()
         connection_status = "✅ Connected to Supabase"
     else:
@@ -34,6 +33,17 @@ def hash_password(password):
 # --------------------------
 # Auth Functions
 # --------------------------
+def get_user_id(username, role):
+    table = "farmers" if role.lower() == "farmer" else "admins"
+    try:
+        resp = supabase.table(table).select("*").eq("username", username).execute()
+        if resp.data:
+            user = resp.data[0]
+            return user[f"{role.lower()}_id"]  # farmer_id or admin_id
+    except:
+        return None
+    return None
+
 def local_login(username, password, role):
     table = "farmers" if role.lower() == "farmer" else "admins"
     if supabase:
@@ -41,7 +51,7 @@ def local_login(username, password, role):
             resp = supabase.table(table).select("*").eq("username", username).execute()
             if resp.data:
                 user = resp.data[0]
-                return user["password"] == hash_password(password)
+                return user.get("password") == hash_password(password)
         except Exception as e:
             st.error(f"Login error: {e}")
     return False
@@ -52,7 +62,8 @@ def register_user(username, password, role):
         try:
             supabase.table(table).insert({
                 "username": username,
-                "password": hash_password(password)
+                "password": hash_password(password),
+                "role": role
             }).execute()
             st.success("✅ Registered successfully!")
         except Exception as e:
@@ -66,8 +77,12 @@ def register_user(username, password, role):
 def save_detection(farmer_username, prediction, confidence, image_url):
     if supabase:
         try:
+            farmer_id = get_user_id(farmer_username, "Farmer")
+            if farmer_id is None:
+                st.error("Farmer not found in database")
+                return
             supabase.table("detection_records").insert({
-                "farmer_username": farmer_username,  # text instead of integer
+                "farmer_id": farmer_id,
                 "prediction": prediction,
                 "confidence": confidence,
                 "image_url": image_url,
@@ -87,7 +102,6 @@ st.info(f"Supabase Status: {connection_status}")
 
 menu = ["Login", "Register", "Upload & Detect", "History"]
 choice = st.sidebar.selectbox("Menu", menu)
-
 role = st.sidebar.radio("Role", ["Farmer", "Admin"])
 
 if choice == "Login":
@@ -118,11 +132,9 @@ elif choice == "Upload & Detect":
         if uploaded_file is not None:
             st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
             if st.button("Run Detection"):
-                # 🔮 Fake detection result (replace with ML model)
-                prediction = "Pest Detected"
+                prediction = "Pest Detected"  # replace with model prediction
                 confidence = 0.92
                 image_url = f"https://fake-bucket/{uploaded_file.name}"
-
                 st.success(f"Prediction: {prediction} (Confidence: {confidence:.2f})")
                 save_detection(st.session_state["user"], prediction, confidence, image_url)
 
@@ -133,12 +145,14 @@ elif choice == "History":
         st.subheader("📜 Detection History")
         if supabase:
             try:
-                resp = supabase.table("detection_records").select("*").eq("farmer_username", st.session_state["user"]).execute()
-                if resp.data:
-                    for rec in resp.data:
-                        st.write(f"🗓 {rec['timestamp']} → {rec['prediction']} ({rec['confidence']})")
-                else:
-                    st.info("No history found.")
+                farmer_id = get_user_id(st.session_state["user"], "Farmer")
+                if farmer_id:
+                    resp = supabase.table("detection_records").select("*").eq("farmer_id", farmer_id).execute()
+                    if resp.data:
+                        for rec in resp.data:
+                            st.write(f"🗓 {rec['timestamp']} → {rec['prediction']} ({rec['confidence']})")
+                    else:
+                        st.info("No history found.")
             except Exception as e:
                 st.error(f"History error: {e}")
         else:
