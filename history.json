@@ -1,0 +1,303 @@
+{
+  "ashritha8@gmail.com": [
+    {
+      "timestamp": "2025-09-30 12:57:12",
+      "image": "pe.jpeg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 13:00:44",
+      "image": "pe1.jpg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 19:53:35",
+      "image": "h2.jpeg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-10-01 12:09:55",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    }
+  ],
+  "ashritha824@gmail.com": [
+    {
+      "timestamp": "2025-09-30 13:03:59",
+      "image": "pe.jpeg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 13:07:23",
+      "image": "pe1.jpg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 13:16:45",
+      "image": "h1.jpeg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 13:18:16",
+      "image": "h2.jpeg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 13:38:36",
+      "image": "h1.jpeg",
+      "prediction": "Model not found. Please add pest_disease_model.pt in models/"
+    },
+    {
+      "timestamp": "2025-09-30 19:09:42",
+      "image": "d1.jpg",
+      "prediction": "\u26a0\ufe0f Model file missing. Defaulting to 'Healthy'."
+    },
+    {
+      "timestamp": "2025-09-30 19:12:38",
+      "image": "h1.jpeg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:12:55",
+      "image": "d1.jpg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:15:03",
+      "image": "d2.jpg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:26:50",
+      "image": "d2.jpg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:28:54",
+      "image": "d1.jpg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:31:40",
+      "image": "d2.jpg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:37:46",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:40:42",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Unknown"
+    },
+    {
+      "timestamp": "2025-09-30 19:41:05",
+      "image": "h1.jpeg",
+      "prediction": "Unknown"
+    },
+    {
+      "timestamp": "2025-09-30 19:42:32",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 19:42:47",
+      "image": "h2.jpeg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:43:12",
+      "image": "h2.jpeg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:43:23",
+      "image": "d2.jpg",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 19:45:57",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 19:47:21",
+      "image": "h2.jpeg",
+      "prediction": "Healthy"
+    },
+    {
+      "timestamp": "2025-09-30 19:51:12",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 19:52:36",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 20:19:44",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 20:42:50",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    },
+    {
+      "timestamp": "2025-09-30 21:47:05",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-09-30 21:49:33",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-09-30 22:05:22",
+      "image": "h1.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-09-30 22:17:22",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-09-30 22:17:59",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-09-30 22:18:01",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-10-01 11:35:00",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-10-01 12:14:26",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:18:57",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:25:30",
+      "image": "d2.jpg",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-10-01 12:27:07",
+      "image": "d2.jpg",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-10-01 12:27:09",
+      "image": "d2.jpg",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    },
+    {
+      "timestamp": "2025-10-01 12:27:35",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:32:16",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:32:21",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:32:37",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 12:34:48",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-10-01 13:12:31",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    }
+  ],
+  "ashritha82@gmail.com": [
+    {
+      "timestamp": "2025-09-30 19:55:02",
+      "image": "ChatGPT Image Sep 30, 2025, 07_37_09 PM.png",
+      "prediction": "Pest-Affected"
+    }
+  ],
+  "akhila1@gmail.com": [
+    {
+      "timestamp": "2025-09-30 22:14:22",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-09-30 22:20:43",
+      "image": "d2.jpg",
+      "prediction": "Pest-Affected",
+      "confidence": 0.85
+    }
+  ],
+  "mohan@gmail.com": [
+    {
+      "timestamp": "2025-09-30 22:22:12",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-09-30 22:22:21",
+      "image": "d1.jpg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    }
+  ],
+  "akhila2@gmail.com": [
+    {
+      "timestamp": "2025-10-01 12:02:49",
+      "image": "h2.jpeg",
+      "prediction": "Healthy",
+      "confidence": 0.95
+    }
+  ]
+}
