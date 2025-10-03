@@ -79,15 +79,6 @@ if "logged_in" not in st.session_state:
     st.session_state.role = "Farmer"
     st.session_state.user_id = None
 
-# ---------------- Styles ----------------
-st.markdown("""
-<style>
-.stButton>button {background-color:#4CAF50;color:white;height:3em;width:100%;font-weight:bold;}
-.card {padding:12px; border-radius:10px; box-shadow:0 4px 8px rgba(0,0,0,0.08); margin-bottom:12px;}
-.prediction {font-weight:bold; padding:6px 10px; border-radius:6px; color:white; display:inline-block;}
-</style>
-""", unsafe_allow_html=True)
-
 # ---------------- Auth ----------------
 st.subheader("Login / Register")
 kind = st.radio("Choose", ["Login", "Register"], horizontal=True)
@@ -101,6 +92,7 @@ if st.button("Submit"):
     # ---------- Register ----------
     if kind=="Register":
         table = FARMERS_TABLE if role_input=="Farmer" else ADMINS_TABLE
+        # Insert into Supabase
         if supabase:
             try:
                 payload = {"username": username_input, "email": username_input,
@@ -108,11 +100,14 @@ if st.button("Submit"):
                 if role_input=="Admin":
                     payload = {"name": username_input, "email": username_input,
                                "password": hashed_pw, "role": role_input}
-                res = supabase.table(table).insert(payload).execute()
+                    res = supabase.table(ADMINS_TABLE).insert(payload).execute()
+                else:
+                    res = supabase.table(FARMERS_TABLE).insert(payload).execute()
                 st.success("✅ Registered successfully in Supabase!")
             except Exception as e:
                 st.error(f"Supabase insert failed: {e}")
         else:
+            # fallback local
             users = load_json(USERS_FILE)
             if username_input in users:
                 st.warning("Username already exists locally.")
@@ -153,21 +148,22 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
     uploaded = st.file_uploader("Upload crop image", type=["jpg","jpeg","png"])
     
     if uploaded:
-        os.makedirs("uploads", exist_ok=True)
         save_path = f"uploads/{st.session_state.username}_{uploaded.name}"
+        os.makedirs("uploads", exist_ok=True)
         with open(save_path, "wb") as f: f.write(uploaded.getbuffer())
-        st.image(save_path, use_container_width=True)
+        st.image(save_path, use_column_width=True)
         
         if st.button("🔍 Detect"):
             pred, conf = predict_image(save_path)
             st.success(f"Prediction: {pred} ({conf*100:.1f}%)")
             
+            # Insert detection
             if supabase:
                 try:
                     payload = {"farmer_id": st.session_state.user_id,
                                "prediction": pred, "confidence": float(conf),
                                "image_url": save_path, "timestamp": datetime.utcnow().isoformat()}
-                    supabase.table(DETECTION_TABLE).insert(payload).execute()
+                    res = supabase.table(DETECTION_TABLE).insert(payload).execute()
                     st.success("✅ Detection stored in Supabase")
                 except Exception as e:
                     st.warning(f"Could not insert detection: {e}")
@@ -181,26 +177,8 @@ if st.session_state.logged_in and st.session_state.role=="Admin":
             records = records_res.data
             if records:
                 for rec in records:
-                    color = "#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
-                    st.markdown(f"""
-                        <div class="card">
-                        <p><b>Farmer ID:</b> {rec.get('farmer_id','')}</p>
-                        <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{rec.get('prediction','')}</span></p>
-                        <p><b>Confidence:</b> {rec.get('confidence',0.0)*100:.1f}%</p>
-                        <p><b>Image:</b> {rec.get('image_url','')}</p>
-                        <p><b>Timestamp:</b> {rec.get('timestamp','')}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.write(rec)
             else:
                 st.info("No detection records.")
         except Exception as e:
             st.warning(f"Failed to fetch records: {e}")
-
-# ---------------- Logout ----------------
-st.markdown("---")
-if st.button("🚪 Logout"):
-    st.session_state.logged_in=False
-    st.session_state.username=""
-    st.session_state.role="Farmer"
-    st.session_state.user_id=None
-    st.experimental_rerun()
