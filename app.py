@@ -106,7 +106,6 @@ def create_tables():
     if not supabase:
         return
     try:
-        # Farmers table
         supabase.sql(f"""
             create table if not exists {TABLE_FARMERS} (
                 farmer_id serial primary key,
@@ -114,7 +113,6 @@ def create_tables():
                 password text
             );
         """).execute()
-        # Admins table
         supabase.sql(f"""
             create table if not exists {TABLE_ADMINS} (
                 admin_id serial primary key,
@@ -122,7 +120,6 @@ def create_tables():
                 password text
             );
         """).execute()
-        # Detection records
         supabase.sql(f"""
             create table if not exists {TABLE_DETECTION} (
                 id serial primary key,
@@ -136,7 +133,7 @@ def create_tables():
     except:
         pass
 
-create_tables()  # Ensure tables exist
+create_tables()
 
 # ---------- Styles ----------
 st.markdown("""
@@ -158,7 +155,6 @@ if not st.session_state.logged_in:
     if st.button("Submit"):
         if kind=="Register":
             if local_register(username_input,password_input):
-                # Insert into Supabase table if connected
                 if supabase:
                     table = TABLE_FARMERS if role_input=="Farmer" else TABLE_ADMINS
                     supabase.table(table).insert({
@@ -173,11 +169,11 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in=True
                 st.session_state.username=username_input
                 st.session_state.role=role_input
-                # fetch user_id from Supabase
                 if supabase:
                     table = TABLE_FARMERS if role_input=="Farmer" else TABLE_ADMINS
                     res = supabase.table(table).select("*").eq("username", username_input).execute()
-                    if res.data: st.session_state.user_id = res.data[0].get("farmer_id" if role_input=="Farmer" else "admin_id")
+                    if res.data:
+                        st.session_state.user_id = res.data[0].get("farmer_id" if role_input=="Farmer" else "admin_id")
                 st.success(f"Logged in as {username_input}")
             else:
                 st.error("Invalid credentials.")
@@ -195,7 +191,6 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             add_local_history(st.session_state.username,uploaded.name,pred,conf)
             color="#4CAF50" if pred=="Healthy" else ("#FF9800" if "Pest" in pred else "#F44336")
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>",unsafe_allow_html=True)
-            # Insert into Supabase detection table
             if supabase:
                 supabase.table(TABLE_DETECTION).insert({
                     "farmer_id": st.session_state.user_id,
@@ -204,6 +199,54 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
                     "image_url": save_name,
                     "timestamp": datetime.utcnow().isoformat()
                 }).execute()
+
+# ---------- Admin UI ----------
+if st.session_state.logged_in and st.session_state.role=="Admin":
+    st.subheader(f"Admin Panel: {st.session_state.username}")
+
+    st.markdown("### ✅ Farmers")
+    if supabase:
+        farmers = supabase.table(TABLE_FARMERS).select("*").execute().data
+        for f in farmers:
+            st.markdown(f"<div class='card'><b>ID:</b> {f['farmer_id']} | <b>Username:</b> {f['username']}</div>", unsafe_allow_html=True)
+
+    st.markdown("### ✅ Admins")
+    if supabase:
+        admins = supabase.table(TABLE_ADMINS).select("*").execute().data
+        for a in admins:
+            st.markdown(f"<div class='card'><b>ID:</b> {a['admin_id']} | <b>Username:</b> {a['username']}</div>", unsafe_allow_html=True)
+
+    st.markdown("### 📝 Detection Records")
+    if supabase:
+        records = supabase.table(TABLE_DETECTION).select("*").order("timestamp", desc=True).execute().data
+        for rec in records:
+            color="#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
+            st.markdown(f"""
+                <div class="card">
+                <p><b>Farmer ID:</b> {rec.get('farmer_id','')}</p>
+                <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{rec.get('prediction','')}</span></p>
+                <p><b>Confidence:</b> {rec.get('confidence',0.0)*100:.1f}%</p>
+                <p><b>Image:</b> {rec.get('image_url','')}</p>
+                <p><b>Timestamp:</b> {rec.get('timestamp','')}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+# ---------- Local History ----------
+st.markdown("---")
+st.subheader("📜 Detection History (local)")
+history=load_json(HISTORY_FILE).get(st.session_state.username,[])
+if history:
+    for rec in reversed(history):
+        color="#4CAF50" if rec.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in rec.get("prediction","") else "#F44336")
+        st.markdown(f"""
+            <div class="card">
+            <p><b>Image:</b> {rec.get('image')}</p>
+            <p><b>Timestamp:</b> {rec.get('timestamp')}</p>
+            <p><span class='prediction' style='background-color:{color}'>{rec.get('prediction')} ({rec.get('confidence',0.0)*100:.1f}%)</span></p>
+            </div>
+        """,unsafe_allow_html=True)
+else:
+    st.info("No history found.")
 
 # ---------- Logout ----------
 st.markdown("---")
