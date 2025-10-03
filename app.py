@@ -3,27 +3,28 @@ import streamlit as st
 import os
 import hashlib
 from datetime import datetime
+from dotenv import load_dotenv
+from supabase import create_client, Client
 from PIL import Image
 import tensorflow as tf
 import numpy as np
-from dotenv import load_dotenv
-from supabase import create_client, Client
 
 # ---------- Load environment ----------
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-supabase: Client | None = None
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        st.success("✅ Connected to Supabase!")
-    except Exception as e:
-        st.warning(f"Supabase connection failed: {e}")
-        supabase = None
-else:
-    st.warning("Supabase credentials missing. Using local fallback.")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("❌ Supabase credentials missing! Please set SUPABASE_URL and SUPABASE_KEY in .env")
+    st.stop()
+
+# ---------- Connect to Supabase ----------
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    st.success("✅ Connected to Supabase!")
+except Exception as e:
+    st.error(f"❌ Could not connect to Supabase: {e}")
+    st.stop()
 
 # ---------- Model ----------
 MODEL_PATH = "models/cnn_model.h5"
@@ -34,8 +35,9 @@ if os.path.exists(MODEL_PATH):
         model = tf.keras.models.load_model(MODEL_PATH)
         model_loaded = True
     except Exception as e:
-        st.warning(f"Model loading failed: {e}")
-        model_loaded = False
+        st.error(f"❌ Failed to load model: {e}")
+else:
+    st.warning("⚠️ Model not found. Upload your trained model to 'models/cnn_model.h5'")
 
 def predict_image(path: str):
     if model_loaded and model:
@@ -46,34 +48,21 @@ def predict_image(path: str):
         idx = probs.argmax()
         label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
         return label, float(probs[idx])
-    # fallback prediction
+    # fallback simple prediction
     width = Image.open(path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
     if width % 3 == 1: return "Pest-Affected", 0.85
     return "Disease-Affected", 0.90
 
-# ---------- Helper ----------
+# ---------- Helpers ----------
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
-
-def add_detection(farmer_id, prediction, confidence, image_url):
-    if not supabase: return
-    try:
-        supabase.table("detection_records").insert({
-            "farmer_id": farmer_id,
-            "prediction": prediction,
-            "confidence": confidence,
-            "image_url": image_url,
-            "timestamp": datetime.utcnow().isoformat()
-        }).execute()
-    except Exception as e:
-        st.error(f"Could not save detection: {e}")
 
 # ---------- Session ----------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
-    st.session_state.role = "Farmer"
+    st.session_state.role = ""
     st.session_state.user_id = None
 
 # ---------- Styles ----------
@@ -91,48 +80,50 @@ if not st.session_state.logged_in:
     choice = st.radio("Choose", ["Login","Register"], horizontal=True)
     username_input = st.text_input("Username or Email")
     password_input = st.text_input("Password", type="password")
-    role_input = st.selectbox("Role (for register/login)", ["Farmer","Admin"])
+    role_input = st.selectbox("Role (for register)", ["Farmer","Admin"])
 
     if st.button("Submit"):
         hashed_pw = hash_password(password_input)
-        if not supabase:
-            st.warning("Supabase not connected")
-        else:
+        try:
             if choice == "Register":
-                try:
-                    table = "admins" if role_input=="Admin" else "farmers"
-                    res = supabase.table(table).insert({
-                        "username" if role_input=="Farmer" else "name": username_input,
+                # Register Admin
+                if role_input == "Admin":
+                    res = supabase.table("admins").insert({
+                        "name": username_input,
                         "email": username_input,
                         "password": hashed_pw,
                         "role": role_input
                     }).execute()
-                    st.success(f"✅ {role_input} registered successfully")
-                except Exception as e:
-                    st.error(f"Registration failed: {e}")
+                    st.success(f"✅ Admin registered in Supabase")
+                else:  # Register Farmer
+                    res = supabase.table("farmers").insert({
+                        "username": username_input,
+                        "email": username_input,
+                        "password": hashed_pw,
+                        "role": role_input
+                    }).execute()
+                    st.success(f"✅ Farmer registered in Supabase")
             else:  # Login
-                try:
-                    table = "admins" if role_input=="Admin" else "farmers"
-                    res = supabase.table(table).select("*").eq("email", username_input).execute()
-                    if res.data and res.data[0]["password"] == hashed_pw:
-                        st.session_state.logged_in = True
-                        st.session_state.username = username_input
-                        st.session_state.role = role_input
-                        if role_input=="Farmer":
-                            st.session_state.user_id = res.data[0]["id"]
-                        st.success(f"✅ Logged in as {role_input}")
-                    else:
-                        st.error("Invalid credentials")
-                except Exception as e:
-                    st.error(f"Login failed: {e}")
+                table = "admins" if role_input=="Admin" else "farmers"
+                res = supabase.table(table).select("*").eq("email", username_input).execute()
+                if res.data and res.data[0]["password"] == hashed_pw:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username_input
+                    st.session_state.role = role_input
+                    if role_input=="Farmer":
+                        st.session_state.user_id = res.data[0]["id"]
+                    st.success(f"✅ Logged in as {role_input}")
+                else:
+                    st.error("❌ Invalid credentials")
+        except Exception as e:
+            st.error(f"❌ Supabase operation failed: {e}")
 
 # ---------- Farmer UI ----------
 if st.session_state.logged_in and st.session_state.role=="Farmer":
     st.subheader(f"👋 Welcome, {st.session_state.username}!")
     uploaded = st.file_uploader("Upload crop image", type=["jpg","jpeg","png"])
     if uploaded:
-        os.makedirs("uploads", exist_ok=True)
-        save_path = f"uploads/{st.session_state.username}_{uploaded.name}"
+        save_path = f"{st.session_state.username}_{uploaded.name}"
         with open(save_path, "wb") as f:
             f.write(uploaded.getbuffer())
         st.image(save_path, use_column_width=True)
@@ -140,37 +131,48 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             pred, conf = predict_image(save_path)
             color = "#4CAF50" if pred=="Healthy" else ("#FF9800" if "Pest" in pred else "#F44336")
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>", unsafe_allow_html=True)
-            add_detection(st.session_state.user_id, pred, conf, save_path)
-            st.success("✅ Detection saved in Supabase")
+
+            # Insert into detection_records
+            try:
+                payload = {
+                    "farmer_id": st.session_state.user_id,
+                    "prediction": pred,
+                    "confidence": float(conf),
+                    "image_url": save_path,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                supabase.table("detection_records").insert(payload).execute()
+                st.success("✅ Detection saved in Supabase")
+            except Exception as e:
+                st.error(f"❌ Could not save detection: {e}")
 
 # ---------- Admin UI ----------
 if st.session_state.logged_in and st.session_state.role=="Admin":
     st.subheader(f"👋 Admin Panel: {st.session_state.username}")
-    if supabase:
-        try:
-            records = supabase.table("detection_records").select("*").order("timestamp", desc=True).execute().data
-            if records:
-                for r in records:
-                    color = "#4CAF50" if r.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in r.get("prediction","") else "#F44336")
-                    st.markdown(f"""
-                        <div class="card">
-                        <p><b>Farmer ID:</b> {r.get('farmer_id')}</p>
-                        <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{r.get('prediction')}</span></p>
-                        <p><b>Confidence:</b> {r.get('confidence',0)*100:.1f}%</p>
-                        <p><b>Image:</b> {r.get('image_url')}</p>
-                        <p><b>Timestamp:</b> {r.get('timestamp')}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No records found.")
-        except Exception as e:
-            st.error(f"Could not fetch records: {e}")
+    try:
+        records = supabase.table("detection_records").select("*").order("timestamp", desc=True).execute().data
+        if records:
+            for r in records:
+                color = "#4CAF50" if r.get("prediction")=="Healthy" else ("#FF9800" if "Pest" in r.get("prediction","") else "#F44336")
+                st.markdown(f"""
+                    <div class="card">
+                    <p><b>Farmer ID:</b> {r.get('farmer_id')}</p>
+                    <p><b>Prediction:</b> <span class='prediction' style='background-color:{color}'>{r.get('prediction')}</span></p>
+                    <p><b>Confidence:</b> {r.get('confidence',0)*100:.1f}%</p>
+                    <p><b>Image:</b> {r.get('image_url')}</p>
+                    <p><b>Timestamp:</b> {r.get('timestamp')}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No detection records found.")
+    except Exception as e:
+        st.error(f"❌ Could not fetch records: {e}")
 
 # ---------- Logout ----------
 st.markdown("---")
 if st.button("🚪 Logout"):
     st.session_state.logged_in = False
     st.session_state.username = ""
-    st.session_state.role = "Farmer"
+    st.session_state.role = ""
     st.session_state.user_id = None
     st.experimental_rerun()
