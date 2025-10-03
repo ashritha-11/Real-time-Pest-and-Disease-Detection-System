@@ -3,11 +3,11 @@ import streamlit as st
 import os
 import hashlib
 from datetime import datetime
-from supabase import create_client, Client
 from PIL import Image
 import tensorflow as tf
 import numpy as np
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 # ---------- Load environment ----------
 load_dotenv()
@@ -33,7 +33,8 @@ if os.path.exists(MODEL_PATH):
     try:
         model = tf.keras.models.load_model(MODEL_PATH)
         model_loaded = True
-    except:
+    except Exception as e:
+        st.warning(f"Model loading failed: {e}")
         model_loaded = False
 
 def predict_image(path: str):
@@ -45,6 +46,7 @@ def predict_image(path: str):
         idx = probs.argmax()
         label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
         return label, float(probs[idx])
+    # fallback prediction
     width = Image.open(path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
     if width % 3 == 1: return "Pest-Affected", 0.85
@@ -53,6 +55,19 @@ def predict_image(path: str):
 # ---------- Helper ----------
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
+
+def add_detection(farmer_id, prediction, confidence, image_url):
+    if not supabase: return
+    try:
+        supabase.table("detection_records").insert({
+            "farmer_id": farmer_id,
+            "prediction": prediction,
+            "confidence": confidence,
+            "image_url": image_url,
+            "timestamp": datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        st.error(f"Could not save detection: {e}")
 
 # ---------- Session ----------
 if "logged_in" not in st.session_state:
@@ -76,7 +91,7 @@ if not st.session_state.logged_in:
     choice = st.radio("Choose", ["Login","Register"], horizontal=True)
     username_input = st.text_input("Username or Email")
     password_input = st.text_input("Password", type="password")
-    role_input = st.selectbox("Role (for register)", ["Farmer","Admin"])
+    role_input = st.selectbox("Role (for register/login)", ["Farmer","Admin"])
 
     if st.button("Submit"):
         hashed_pw = hash_password(password_input)
@@ -85,22 +100,14 @@ if not st.session_state.logged_in:
         else:
             if choice == "Register":
                 try:
-                    if role_input == "Admin":
-                        res = supabase.table("admins").insert({
-                            "name": username_input,
-                            "email": username_input,
-                            "password": hashed_pw,
-                            "role": role_input
-                        }).execute()
-                        st.success(f"✅ Admin registered in Supabase")
-                    else:
-                        res = supabase.table("farmers").insert({
-                            "username": username_input,
-                            "email": username_input,
-                            "password": hashed_pw,
-                            "role": role_input
-                        }).execute()
-                        st.success(f"✅ Farmer registered in Supabase")
+                    table = "admins" if role_input=="Admin" else "farmers"
+                    res = supabase.table(table).insert({
+                        "username" if role_input=="Farmer" else "name": username_input,
+                        "email": username_input,
+                        "password": hashed_pw,
+                        "role": role_input
+                    }).execute()
+                    st.success(f"✅ {role_input} registered successfully")
                 except Exception as e:
                     st.error(f"Registration failed: {e}")
             else:  # Login
@@ -124,7 +131,8 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
     st.subheader(f"👋 Welcome, {st.session_state.username}!")
     uploaded = st.file_uploader("Upload crop image", type=["jpg","jpeg","png"])
     if uploaded:
-        save_path = f"{st.session_state.username}_{uploaded.name}"
+        os.makedirs("uploads", exist_ok=True)
+        save_path = f"uploads/{st.session_state.username}_{uploaded.name}"
         with open(save_path, "wb") as f:
             f.write(uploaded.getbuffer())
         st.image(save_path, use_column_width=True)
@@ -132,21 +140,8 @@ if st.session_state.logged_in and st.session_state.role=="Farmer":
             pred, conf = predict_image(save_path)
             color = "#4CAF50" if pred=="Healthy" else ("#FF9800" if "Pest" in pred else "#F44336")
             st.markdown(f"<span class='prediction' style='background-color:{color}'>{pred} ({conf*100:.1f}%)</span>", unsafe_allow_html=True)
-
-            # Insert detection into Supabase
-            if supabase:
-                try:
-                    payload = {
-                        "farmer_id": st.session_state.user_id,
-                        "prediction": pred,
-                        "confidence": float(conf),
-                        "image_url": save_path,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    supabase.table("detection_records").insert(payload).execute()
-                    st.success("✅ Detection saved in Supabase")
-                except Exception as e:
-                    st.error(f"Could not save detection: {e}")
+            add_detection(st.session_state.user_id, pred, conf, save_path)
+            st.success("✅ Detection saved in Supabase")
 
 # ---------- Admin UI ----------
 if st.session_state.logged_in and st.session_state.role=="Admin":
