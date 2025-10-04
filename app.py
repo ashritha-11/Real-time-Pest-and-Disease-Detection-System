@@ -110,56 +110,50 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Advanced Pest/Disease Highlighting (Tiny Spots + Heatmap)
+# Advanced Pest/Disease Highlighting (Smarter + Healthy-safe)
 # --------------------------
 def segment_and_highlight_advanced(image_path):
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # Color spaces
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Color-based masks
-    lower_hsv = np.array([0, 0, 0])
-    upper_hsv = np.array([180, 255, 90])
+    # Color-based masks (yellow/brown spots)
+    lower_hsv = np.array([10, 50, 50])
+    upper_hsv = np.array([35, 255, 255])
     mask_hsv = cv2.inRange(hsv, lower_hsv, upper_hsv)
 
-    lower_lab = np.array([0, 120, 0])
-    upper_lab = np.array([255, 145, 255])
+    lower_lab = np.array([20, 130, 130])
+    upper_lab = np.array([200, 160, 180])
     mask_lab = cv2.inRange(lab, lower_lab, upper_lab)
 
     # Texture-based mask
     laplacian = cv2.Laplacian(gray, cv2.CV_8U)
-    _, mask_lap = cv2.threshold(laplacian, 20, 255, cv2.THRESH_BINARY)
+    _, mask_lap = cv2.threshold(laplacian, 30, 255, cv2.THRESH_BINARY)
 
-    # Combine masks
     combined_mask = cv2.bitwise_or(mask_hsv, mask_lab)
     combined_mask = cv2.bitwise_or(combined_mask, mask_lap)
 
-    # Morphology
     kernel = np.ones((3,3), np.uint8)
     combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
 
-    # Contours and bounding boxes
     contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     pest_count = 0
     heatmap = np.zeros_like(gray, dtype=np.float32)
+    MIN_CONTOUR_AREA = 100
 
     for c in contours:
-        if cv2.contourArea(c) > 5:
+        if cv2.contourArea(c) >= MIN_CONTOUR_AREA:
             x, y, w, h = cv2.boundingRect(c)
-            cv2.rectangle(img_rgb, (x, y), (x+w, y+h), (255, 0, 0), 1)
-            cv2.putText(img_rgb, "Pest/Disease", (x, y-3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,0,0), 1)
+            cv2.rectangle(img_rgb, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.putText(img_rgb, "Pest/Disease", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
             pest_count += 1
-
-            # Add heat intensity
             heatmap[y:y+h, x:x+w] += 1
 
-    # Normalize heatmap and overlay
-    if np.max(heatmap) > 0:
+    if pest_count > 0:
         heatmap_norm = np.uint8(255 * heatmap / np.max(heatmap))
         heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
         overlayed = cv2.addWeighted(img_rgb, 0.7, heatmap_color, 0.3, 0)
@@ -261,10 +255,11 @@ elif choice == "Upload & Detect":
                 else:
                     st.info(f"❔ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
 
-                # Advanced segmentation + heatmap
-                highlighted_img, pest_count = segment_and_highlight_advanced(save_path)
-                st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
-                st.image(highlighted_img, use_container_width=True)
+                # Only run advanced segmentation if prediction is not healthy
+                if prediction != "Healthy":
+                    highlighted_img, pest_count = segment_and_highlight_advanced(save_path)
+                    st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
+                    st.image(highlighted_img, use_container_width=True)
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
@@ -305,16 +300,13 @@ elif choice == "History":
                         st.markdown("---")
 
                     if records:
-                        df = pd.DataFrame([
-                            {
-                                "Farmer": rec.get("farmers", {}).get("username", ""),
-                                "Prediction": rec["prediction"],
-                                "Confidence": rec["confidence"],
-                                "Image URL": rec["image_url"],
-                                "Timestamp": rec["timestamp"]
-                            }
-                            for rec in records
-                        ])
+                        df = pd.DataFrame([{
+                            "Farmer": rec.get("farmers", {}).get("username", ""),
+                            "Prediction": rec["prediction"],
+                            "Confidence": rec["confidence"],
+                            "Image URL": rec["image_url"],
+                            "Timestamp": rec["timestamp"]
+                        } for rec in records])
                         csv = df.to_csv(index=False).encode("utf-8")
                         st.download_button("📥 Download CSV Report", csv, file_name="detection_report.csv")
                 else:
