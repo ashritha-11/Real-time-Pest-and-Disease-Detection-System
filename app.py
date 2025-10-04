@@ -8,7 +8,6 @@ import tensorflow as tf
 import os
 import pandas as pd
 import json
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 # --------------------------
 # Supabase Setup
@@ -93,13 +92,14 @@ def save_detection(farmer_id, prediction, confidence, image_url):
 MODEL_PATH = "models/cnn_model.h5"
 LABELS_PATH = "models/class_indices.json"
 model = None
-idx_to_label = {0: "Healthy", 1: "Pest-Affected", 2: "Disease-Affected"}
+idx_to_label = {0: "Healthy", 1: "Pest_Affected", 2: "Disease_Affected"}
 
 # Load model
 if os.path.exists(MODEL_PATH):
     try:
         model = tf.keras.models.load_model(MODEL_PATH)
-    except:
+    except Exception as e:
+        st.error(f"❌ Error loading model: {e}")
         model = None
 
 # Load label mapping
@@ -108,37 +108,40 @@ if os.path.exists(LABELS_PATH):
         with open(LABELS_PATH, "r") as f:
             class_indices = json.load(f)
         idx_to_label = {v: k for k, v in class_indices.items()}
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"⚠ Could not load class indices: {e}")
 
+# --------------------------
+# Prediction Function
+# --------------------------
 def predict_image(file_path, threshold=0.7):
     if model:
         img = Image.open(file_path).convert("RGB")
         arr = np.array(img)
-        arr = tf.image.resize(arr, (224,224))
+        arr = tf.image.resize(arr, (224, 224))
         arr = np.expand_dims(arr, axis=0)
 
-        # Use preprocess_input if model was trained with MobileNetV2/ResNet
-        arr = preprocess_input(arr)
+        # IMPORTANT: no normalization (your training didn’t use it)
+        arr = arr / 255.0
 
         # Prediction
-        probs = model.predict(arr)[0]
+        probs = model.predict(arr, verbose=0)[0]
         idx = probs.argmax()
         confidence = float(probs[idx])
 
         label = idx_to_label.get(idx, "Unknown")
 
-        # Threshold for Healthy class
+        # Add safeguard for Healthy misclassification
         if label == "Healthy" and confidence < threshold:
             label = "Not Healthy"
 
         return label, confidence
-    
+
     # fallback dummy prediction
     width = Image.open(file_path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
-    if width % 3 == 1: return "Pest-Affected", 0.85
-    return "Disease-Affected", 0.90
+    if width % 3 == 1: return "Pest_Affected", 0.85
+    return "Disease_Affected", 0.90
 
 # --------------------------
 # Streamlit UI
@@ -200,8 +203,12 @@ elif choice == "Upload & Detect":
                     st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Not Healthy":
                     st.warning(f"⚠️ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                elif prediction == "Pest_Affected":
+                    st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                elif prediction == "Disease_Affected":
+                    st.error(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 else:
-                    st.error(f"❌ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                    st.info(f"❔ Prediction: {prediction}")
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
