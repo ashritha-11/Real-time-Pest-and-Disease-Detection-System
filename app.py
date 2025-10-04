@@ -110,6 +110,7 @@ if os.path.exists(LABELS_PATH):
 # Prediction Function
 # --------------------------
 def predict_image(file_path):
+    """Predicts class using CNN."""
     if model:
         img = Image.open(file_path).convert("RGB")
         arr = np.array(img)
@@ -126,14 +127,15 @@ def predict_image(file_path):
     return "Healthy", 0.0
 
 # --------------------------
-# OpenCV Highlight Function
+# OpenCV Pest Highlight & Count
 # --------------------------
 def highlight_pests_cv2(image_path):
+    """Returns image with pests highlighted and pest count."""
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Simple thresholding to find spots
+    # Simple threshold to find dark spots (pests/disease)
     _, mask = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY_INV)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -200,29 +202,34 @@ elif choice == "Upload & Detect":
             st.image(save_path, use_container_width=True)
 
             if st.button("Run Detection"):
+                # Step 1: CNN prediction
                 prediction, confidence = predict_image(save_path)
 
-                # Display prediction
+                # Step 2: OpenCV pest highlight & count
+                highlighted_img, pest_count = highlight_pests_cv2(save_path)
+
+                # Step 3: Override if CNN predicts Healthy but pests exist
+                if prediction == "Healthy" and pest_count > 0:
+                    prediction = "Pest_Affected"
+                    confidence = 0.6  # moderate confidence
+
+                # Step 4: Display prediction
                 display_map = {
                     "Healthy": ("✅ Healthy", "success"),
                     "Pest_Affected": ("🐛 Pest Affected", "error"),
                     "Disease_Affected": ("🍂 Disease Affected", "error")
                 }
 
-                if prediction not in display_map:
-                    prediction = "Healthy"
-                    confidence = 0.0
-
                 text, style = display_map[prediction]
                 message = f"{text} (Confidence: {confidence*100:.1f}%)"
+
                 if style == "success":
                     st.success(message)
                 else:
                     st.error(message)
 
-                # Highlight pests if not healthy
-                if prediction != "Healthy":
-                    highlighted_img, pest_count = highlight_pests_cv2(save_path)
+                # Step 5: Show pest highlights if any
+                if pest_count > 0:
                     st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
                     st.image(highlighted_img, use_container_width=True)
 
