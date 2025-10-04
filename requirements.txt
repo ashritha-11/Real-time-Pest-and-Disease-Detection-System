@@ -4,5 +4,6 @@ websockets>=11.0.0
 python-dotenv==1.1.1
 pillow==10.4.0
 tensorflow==2.14.0
-
+cv2
 numpy==1.25.2
+
