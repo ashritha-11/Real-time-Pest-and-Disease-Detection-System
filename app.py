@@ -8,6 +8,7 @@ import tensorflow as tf
 import os
 import pandas as pd
 import json
+import cv2
 
 # --------------------------
 # Supabase Setup
@@ -106,7 +107,7 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Prediction Function (with debug)
+# Prediction Function
 # --------------------------
 def predict_image(file_path):
     if model:
@@ -117,26 +118,40 @@ def predict_image(file_path):
         arr = arr / 255.0
 
         probs = model.predict(arr, verbose=0)[0]
-
-        # Debug: Show raw probabilities
-        st.write("Raw model probabilities:", probs)
-
         top_index = np.argmax(probs)
-        label = idx_to_label.get(top_index, "Healthy")  # fallback to Healthy
+        label = idx_to_label.get(top_index, "Healthy")
         confidence = probs[top_index]
-
-        # Show all class probabilities
-        prob_dict = {idx_to_label[i]: float(probs[i]) for i in range(len(probs))}
-        st.write("Class probabilities:", prob_dict)
 
         return label, confidence
     return "Healthy", 0.0
 
 # --------------------------
+# OpenCV Highlight Function
+# --------------------------
+def highlight_pests_cv2(image_path):
+    img = cv2.imread(image_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Simple thresholding to find spots
+    _, mask = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY_INV)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    pest_count = 0
+    for c in contours:
+        if cv2.contourArea(c) > 20:
+            x, y, w, h = cv2.boundingRect(c)
+            cv2.rectangle(img_rgb, (x, y), (x+w, y+h), (255,0,0), 2)
+            cv2.putText(img_rgb, "Pest/Disease", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,0,0), 1)
+            pest_count += 1
+
+    return Image.fromarray(img_rgb), pest_count
+
+# --------------------------
 # Streamlit UI
 # --------------------------
-st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
-st.title("🌱 Simple Pest & Disease Detection System")
+st.set_page_config(page_title="🌱 Pest & Disease Detection", layout="wide")
+st.title("🌱 Pest & Disease Detection System")
 st.info(f"Supabase Status: {connection_status}")
 
 if "user" not in st.session_state:
@@ -187,27 +202,29 @@ elif choice == "Upload & Detect":
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
 
-                # --- Always display proper class label ---
+                # Display prediction
                 display_map = {
                     "Healthy": ("✅ Healthy", "success"),
                     "Pest_Affected": ("🐛 Pest Affected", "error"),
                     "Disease_Affected": ("🍂 Disease Affected", "error")
                 }
 
-                # Fallback if model predicts unknown
                 if prediction not in display_map:
                     prediction = "Healthy"
                     confidence = 0.0
 
                 text, style = display_map[prediction]
                 message = f"{text} (Confidence: {confidence*100:.1f}%)"
-
                 if style == "success":
                     st.success(message)
-                elif style == "error":
-                    st.error(message)
                 else:
-                    st.warning(message)
+                    st.error(message)
+
+                # Highlight pests if not healthy
+                if prediction != "Healthy":
+                    highlighted_img, pest_count = highlight_pests_cv2(save_path)
+                    st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
+                    st.image(highlighted_img, use_container_width=True)
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
@@ -218,12 +235,8 @@ elif choice == "History":
         st.warning("⚠ Please login first")
     elif supabase:
         try:
-            if st.session_state["role"].lower() == "admin":
-                records_resp = supabase.table("detection_records").select("*").order("timestamp", desc=True).execute()
-                records = records_resp.data if records_resp.data else []
-            else:
-                records_resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
-                records = records_resp.data if records_resp.data else []
+            records_resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
+            records = records_resp.data if records_resp.data else []
 
             for rec in records:
                 st.markdown(f"""
