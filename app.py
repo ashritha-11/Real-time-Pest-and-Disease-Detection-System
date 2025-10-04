@@ -178,14 +178,22 @@ elif choice == "Upload & Detect":
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
 
-                if prediction == "Healthy":
-                    st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                elif prediction == "Pest_Affected":
-                    st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                elif prediction == "Disease_Affected":
-                    st.error(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                # --- New simplified prediction display ---
+                prediction_map = {
+                    "Healthy": ("✅", "success"),
+                    "Pest_Affected": ("🐛", "error"),
+                    "Disease_Affected": ("🍂", "error")
+                }
+
+                emoji, status = prediction_map.get(prediction, ("❔", "warning"))
+                message = f"{emoji} Prediction: {prediction} (Confidence: {confidence*100:.1f}%)"
+
+                if status == "success":
+                    st.success(message)
+                elif status == "error":
+                    st.error(message)
                 else:
-                    st.warning(f"❔ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                    st.warning(message)
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
