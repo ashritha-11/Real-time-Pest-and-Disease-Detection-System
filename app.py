@@ -2,7 +2,7 @@ import streamlit as st
 import hashlib
 from datetime import datetime
 from supabase import create_client, Client
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import numpy as np
 import tensorflow as tf
 import os
@@ -79,11 +79,8 @@ def save_detection(farmer_id, prediction, confidence, image_url):
                 "image_url": image_url,
                 "timestamp": datetime.utcnow().isoformat()
             }).execute()
-            st.success("✅ Detection saved to Supabase!")
         except Exception as e:
             st.error(f"Insert error: {e}")
-    else:
-        st.warning("⚠ Supabase not available")
 
 # --------------------------
 # ML Model Setup
@@ -109,51 +106,9 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Advanced Pest/Disease Highlighting without OpenCV
-# --------------------------
-def segment_and_highlight_advanced_pil(image_path):
-    """
-    Highlights pest/disease regions using only PIL + NumPy.
-    Returns:
-        overlayed_img (PIL.Image)
-        pest_count (int)
-    """
-    img = Image.open(image_path).convert("RGB")
-    arr = np.array(img)
-
-    # Convert to HSV-like for spot detection
-    rgb = arr / 255.0
-    r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
-    
-    # Detect yellow/brown spots: simple heuristic
-    mask = ((r > 0.6) & (g > 0.4) & (b < 0.3)) | ((r > 0.4) & (g > 0.3) & (b < 0.2))
-    mask = mask.astype(np.uint8)
-
-    # Small noise removal: ignore tiny spots
-    MIN_SIZE = 50
-    from scipy.ndimage import label, find_objects
-    labeled, num_features = label(mask)
-    slices = find_objects(labeled)
-
-    pest_count = 0
-    overlay = img.copy()
-    draw = ImageDraw.Draw(overlay)
-
-    for i, sl in enumerate(slices):
-        region = mask[sl]
-        if region.sum() >= MIN_SIZE:
-            pest_count += 1
-            y1, x1 = sl[0].start, sl[1].start
-            y2, x2 = sl[0].stop, sl[1].stop
-            draw.rectangle([x1, y1, x2, y2], outline=(255,0,0), width=2)
-            draw.text((x1, y1-10), "Pest/Disease", fill=(255,0,0))
-
-    return overlay, pest_count
-
-# --------------------------
 # Prediction Function
 # --------------------------
-def predict_image(file_path, threshold=0.7):
+def predict_image(file_path):
     if model:
         img = Image.open(file_path).convert("RGB")
         arr = np.array(img)
@@ -162,18 +117,9 @@ def predict_image(file_path, threshold=0.7):
         arr = arr / 255.0
 
         probs = model.predict(arr, verbose=0)[0]
-        top_indices = probs.argsort()[-2:][::-1]
-        top_conf = [probs[i] for i in top_indices]
-        top_labels = [idx_to_label.get(i, "Unknown") for i in top_indices]
-
-        if top_conf[0] < threshold:
-            label = "Not Healthy"
-            confidence = top_conf[0]
-            st.warning(f"⚠ Low confidence prediction. Possible issues: {', '.join(top_labels)}")
-        else:
-            label = top_labels[0]
-            confidence = top_conf[0]
-
+        top_index = np.argmax(probs)
+        label = idx_to_label.get(top_index, "Unknown")
+        confidence = probs[top_index]
         return label, confidence
     return "Unknown", 0.0
 
@@ -181,7 +127,7 @@ def predict_image(file_path, threshold=0.7):
 # Streamlit UI
 # --------------------------
 st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
-st.title("🌱 Real-time Pest & Disease Detection System")
+st.title("🌱 Simple Pest & Disease Detection System")
 st.info(f"Supabase Status: {connection_status}")
 
 if "user" not in st.session_state:
@@ -234,13 +180,12 @@ elif choice == "Upload & Detect":
 
                 if prediction == "Healthy":
                     st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                elif prediction == "Pest_Affected":
+                    st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                elif prediction == "Disease_Affected":
+                    st.error(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 else:
-                    st.warning(f"⚠ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-
-                    # Run PIL-based advanced segmentation
-                    highlighted_img, pest_count = segment_and_highlight_advanced_pil(save_path)
-                    st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
-                    st.image(highlighted_img, use_container_width=True)
+                    st.warning(f"❔ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
@@ -252,47 +197,21 @@ elif choice == "History":
     elif supabase:
         try:
             if st.session_state["role"].lower() == "admin":
-                farmers_resp = supabase.table("farmers").select("*").execute()
-                farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
-                selected_farmer = st.selectbox("Filter by Farmer", ["All"] + farmers_list)
-
-                query = supabase.table("detection_records").select(
-                    "id, farmer_id, prediction, confidence, image_url, timestamp, farmers(username)"
-                ).order("timestamp", desc=True)
-
-                if selected_farmer != "All":
-                    farmer_id = next((f["farmer_id"] for f in farmers_resp.data if f["username"]==selected_farmer), None)
-                    query = query.eq("farmer_id", farmer_id)
-
-                resp = query.execute()
-                records = resp.data if resp.data else []
-
-                for rec in records:
-                    farmer_name = rec.get("farmers", {}).get("username", "Unknown")
-                    st.markdown(f"""
-                        **Farmer:** {farmer_name}  
-                        **Prediction:** {rec['prediction']}  
-                        **Confidence:** {rec['confidence']*100:.1f}%  
-                        **Timestamp:** {rec['timestamp']}  
-                    """)
-                    if rec.get("image_url"):
-                        st.image(rec["image_url"], width=200)
-                    st.markdown("---")
-
+                records_resp = supabase.table("detection_records").select("*").order("timestamp", desc=True).execute()
+                records = records_resp.data if records_resp.data else []
             else:
-                resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
-                if resp.data:
-                    for rec in resp.data:
-                        st.markdown(f"""
-                            **Prediction:** {rec['prediction']}  
-                            **Confidence:** {rec['confidence']*100:.1f}%  
-                            **Timestamp:** {rec['timestamp']}  
-                        """)
-                        if rec.get("image_url"):
-                            st.image(rec["image_url"], width=200)
-                        st.markdown("---")
-                else:
-                    st.info("No records found.")
+                records_resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
+                records = records_resp.data if records_resp.data else []
+
+            for rec in records:
+                st.markdown(f"""
+                    **Prediction:** {rec['prediction']}  
+                    **Confidence:** {rec['confidence']*100:.1f}%  
+                    **Timestamp:** {rec['timestamp']}  
+                """)
+                if rec.get("image_url"):
+                    st.image(rec["image_url"], width=200)
+                st.markdown("---")
         except Exception as e:
             st.error(f"History error: {e}")
     else:
