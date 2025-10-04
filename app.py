@@ -7,6 +7,8 @@ import numpy as np
 import tensorflow as tf
 import os
 import pandas as pd
+import json
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 # --------------------------
 # Supabase Setup
@@ -86,25 +88,52 @@ def save_detection(farmer_id, prediction, confidence, image_url):
         st.warning("⚠ Supabase not available")
 
 # --------------------------
-# ML Model (placeholder)
+# ML Model Setup
 # --------------------------
 MODEL_PATH = "models/cnn_model.h5"
+LABELS_PATH = "models/class_indices.json"
 model = None
+idx_to_label = {0: "Healthy", 1: "Pest-Affected", 2: "Disease-Affected"}
+
+# Load model
 if os.path.exists(MODEL_PATH):
     try:
         model = tf.keras.models.load_model(MODEL_PATH)
     except:
         model = None
 
-def predict_image(file_path):
+# Load label mapping
+if os.path.exists(LABELS_PATH):
+    try:
+        with open(LABELS_PATH, "r") as f:
+            class_indices = json.load(f)
+        idx_to_label = {v: k for k, v in class_indices.items()}
+    except:
+        pass
+
+def predict_image(file_path, threshold=0.7):
     if model:
-        img = Image.open(file_path).resize((224,224)).convert("RGB")
-        arr = np.array(img)/255.0
-        arr = arr.reshape((1,)+arr.shape)
+        img = Image.open(file_path).convert("RGB")
+        arr = np.array(img)
+        arr = tf.image.resize(arr, (224,224))
+        arr = np.expand_dims(arr, axis=0)
+
+        # Use preprocess_input if model was trained with MobileNetV2/ResNet
+        arr = preprocess_input(arr)
+
+        # Prediction
         probs = model.predict(arr)[0]
         idx = probs.argmax()
-        label = "Healthy" if idx==0 else ("Pest-Affected" if idx==1 else "Disease-Affected")
-        return label, float(probs[idx])
+        confidence = float(probs[idx])
+
+        label = idx_to_label.get(idx, "Unknown")
+
+        # Threshold for Healthy class
+        if label == "Healthy" and confidence < threshold:
+            label = "Not Healthy"
+
+        return label, confidence
+    
     # fallback dummy prediction
     width = Image.open(file_path).size[0]
     if width % 3 == 0: return "Healthy", 0.95
@@ -165,7 +194,15 @@ elif choice == "Upload & Detect":
 
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
-                st.success(f"Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                
+                # Styled output
+                if prediction == "Healthy":
+                    st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                elif prediction == "Not Healthy":
+                    st.warning(f"⚠️ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                else:
+                    st.error(f"❌ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
 # ---------- History ----------
@@ -247,5 +284,3 @@ if st.button("🚪 Logout"):
     st.session_state["role"] = None
     st.session_state["user_id"] = None
     st.rerun()
-
-
