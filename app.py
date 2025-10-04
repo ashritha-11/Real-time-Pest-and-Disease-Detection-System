@@ -106,7 +106,7 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Prediction Function
+# Prediction Function (with debug)
 # --------------------------
 def predict_image(file_path):
     if model:
@@ -117,9 +117,18 @@ def predict_image(file_path):
         arr = arr / 255.0
 
         probs = model.predict(arr, verbose=0)[0]
+
+        # Debug: Show raw probabilities
+        st.write("Raw model probabilities:", probs)
+
         top_index = np.argmax(probs)
         label = idx_to_label.get(top_index, "Healthy")  # fallback to Healthy
         confidence = probs[top_index]
+
+        # Show all class probabilities
+        prob_dict = {idx_to_label[i]: float(probs[i]) for i in range(len(probs))}
+        st.write("Class probabilities:", prob_dict)
+
         return label, confidence
     return "Healthy", 0.0
 
