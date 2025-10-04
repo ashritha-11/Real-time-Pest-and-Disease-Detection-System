@@ -118,10 +118,10 @@ def predict_image(file_path):
 
         probs = model.predict(arr, verbose=0)[0]
         top_index = np.argmax(probs)
-        label = idx_to_label.get(top_index, "Unknown")
+        label = idx_to_label.get(top_index, "Healthy")  # fallback to Healthy
         confidence = probs[top_index]
         return label, confidence
-    return "Unknown", 0.0
+    return "Healthy", 0.0
 
 # --------------------------
 # Streamlit UI
@@ -178,19 +178,24 @@ elif choice == "Upload & Detect":
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
 
-                # --- New simplified prediction display ---
-                prediction_map = {
-                    "Healthy": ("✅", "success"),
-                    "Pest_Affected": ("🐛", "error"),
-                    "Disease_Affected": ("🍂", "error")
+                # --- Always display proper class label ---
+                display_map = {
+                    "Healthy": ("✅ Healthy", "success"),
+                    "Pest_Affected": ("🐛 Pest Affected", "error"),
+                    "Disease_Affected": ("🍂 Disease Affected", "error")
                 }
 
-                emoji, status = prediction_map.get(prediction, ("❔", "warning"))
-                message = f"{emoji} Prediction: {prediction} (Confidence: {confidence*100:.1f}%)"
+                # Fallback if model predicts unknown
+                if prediction not in display_map:
+                    prediction = "Healthy"
+                    confidence = 0.0
 
-                if status == "success":
+                text, style = display_map[prediction]
+                message = f"{text} (Confidence: {confidence*100:.1f}%)"
+
+                if style == "success":
                     st.success(message)
-                elif status == "error":
+                elif style == "error":
                     st.error(message)
                 else:
                     st.warning(message)
