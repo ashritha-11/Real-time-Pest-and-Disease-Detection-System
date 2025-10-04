@@ -8,6 +8,7 @@ import tensorflow as tf
 import os
 import pandas as pd
 import json
+import cv2
 
 # --------------------------
 # Supabase Setup
@@ -21,7 +22,6 @@ connection_status = "❌ Not Connected"
 try:
     if SUPABASE_URL and SUPABASE_KEY:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # Test connection
         _ = supabase.table("farmers").select("*").limit(1).execute()
         connection_status = "✅ Connected to Supabase"
     else:
@@ -94,7 +94,6 @@ LABELS_PATH = "models/class_indices.json"
 model = None
 idx_to_label = {0: "Healthy", 1: "Pest_Affected", 2: "Disease_Affected"}
 
-# Load model
 if os.path.exists(MODEL_PATH):
     try:
         model = tf.keras.models.load_model(MODEL_PATH)
@@ -102,7 +101,6 @@ if os.path.exists(MODEL_PATH):
         st.error(f"❌ Error loading model: {e}")
         model = None
 
-# Load label mapping
 if os.path.exists(LABELS_PATH):
     try:
         with open(LABELS_PATH, "r") as f:
@@ -110,6 +108,65 @@ if os.path.exists(LABELS_PATH):
         idx_to_label = {v: k for k, v in class_indices.items()}
     except Exception as e:
         st.warning(f"⚠ Could not load class indices: {e}")
+
+# --------------------------
+# Advanced Pest/Disease Highlighting (Tiny Spots + Heatmap)
+# --------------------------
+def segment_and_highlight_advanced(image_path):
+    img = cv2.imread(image_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    # Color spaces
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Color-based masks
+    lower_hsv = np.array([0, 0, 0])
+    upper_hsv = np.array([180, 255, 90])
+    mask_hsv = cv2.inRange(hsv, lower_hsv, upper_hsv)
+
+    lower_lab = np.array([0, 120, 0])
+    upper_lab = np.array([255, 145, 255])
+    mask_lab = cv2.inRange(lab, lower_lab, upper_lab)
+
+    # Texture-based mask
+    laplacian = cv2.Laplacian(gray, cv2.CV_8U)
+    _, mask_lap = cv2.threshold(laplacian, 20, 255, cv2.THRESH_BINARY)
+
+    # Combine masks
+    combined_mask = cv2.bitwise_or(mask_hsv, mask_lab)
+    combined_mask = cv2.bitwise_or(combined_mask, mask_lap)
+
+    # Morphology
+    kernel = np.ones((3,3), np.uint8)
+    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
+
+    # Contours and bounding boxes
+    contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    pest_count = 0
+    heatmap = np.zeros_like(gray, dtype=np.float32)
+
+    for c in contours:
+        if cv2.contourArea(c) > 5:
+            x, y, w, h = cv2.boundingRect(c)
+            cv2.rectangle(img_rgb, (x, y), (x+w, y+h), (255, 0, 0), 1)
+            cv2.putText(img_rgb, "Pest/Disease", (x, y-3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,0,0), 1)
+            pest_count += 1
+
+            # Add heat intensity
+            heatmap[y:y+h, x:x+w] += 1
+
+    # Normalize heatmap and overlay
+    if np.max(heatmap) > 0:
+        heatmap_norm = np.uint8(255 * heatmap / np.max(heatmap))
+        heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
+        overlayed = cv2.addWeighted(img_rgb, 0.7, heatmap_color, 0.3, 0)
+    else:
+        overlayed = img_rgb
+
+    return Image.fromarray(overlayed), pest_count
 
 # --------------------------
 # Prediction Function
@@ -120,28 +177,23 @@ def predict_image(file_path, threshold=0.7):
         arr = np.array(img)
         arr = tf.image.resize(arr, (224, 224))
         arr = np.expand_dims(arr, axis=0)
-
-        # IMPORTANT: no normalization (your training didn’t use it)
         arr = arr / 255.0
 
-        # Prediction
         probs = model.predict(arr, verbose=0)[0]
-        idx = probs.argmax()
-        confidence = float(probs[idx])
+        top_indices = probs.argsort()[-2:][::-1]
+        top_conf = [probs[i] for i in top_indices]
+        top_labels = [idx_to_label.get(i, "Unknown") for i in top_indices]
 
-        label = idx_to_label.get(idx, "Unknown")
-
-        # Add safeguard for Healthy misclassification
-        if label == "Healthy" and confidence < threshold:
+        if top_conf[0] < threshold:
             label = "Not Healthy"
+            confidence = top_conf[0]
+            st.warning(f"⚠ Low confidence prediction. Possible issues: {', '.join(top_labels)}")
+        else:
+            label = top_labels[0]
+            confidence = top_conf[0]
 
         return label, confidence
-
-    # fallback dummy prediction
-    width = Image.open(file_path).size[0]
-    if width % 3 == 0: return "Healthy", 0.95
-    if width % 3 == 1: return "Pest_Affected", 0.85
-    return "Disease_Affected", 0.90
+    return "Unknown", 0.0
 
 # --------------------------
 # Streamlit UI
@@ -197,18 +249,22 @@ elif choice == "Upload & Detect":
 
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
-                
-                # Styled output
+
                 if prediction == "Healthy":
                     st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Not Healthy":
-                    st.warning(f"⚠️ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                    st.warning(f"⚠ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Pest_Affected":
                     st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Disease_Affected":
                     st.error(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 else:
-                    st.info(f"❔ Prediction: {prediction}")
+                    st.info(f"❔ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+
+                # Advanced segmentation + heatmap
+                highlighted_img, pest_count = segment_and_highlight_advanced(save_path)
+                st.subheader(f"🔹 Pest / Disease Highlights (Count: {pest_count})")
+                st.image(highlighted_img, use_container_width=True)
 
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
@@ -220,7 +276,6 @@ elif choice == "History":
         st.subheader("📜 Detection History")
         if supabase:
             try:
-                # Admin sees all farmers
                 if st.session_state["role"].lower() == "admin":
                     farmers_resp = supabase.table("farmers").select("*").execute()
                     farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
@@ -249,7 +304,6 @@ elif choice == "History":
                             st.image(rec["image_url"], width=200)
                         st.markdown("---")
 
-                    # Download CSV
                     if records:
                         df = pd.DataFrame([
                             {
@@ -263,8 +317,6 @@ elif choice == "History":
                         ])
                         csv = df.to_csv(index=False).encode("utf-8")
                         st.download_button("📥 Download CSV Report", csv, file_name="detection_report.csv")
-                
-                # Farmer sees only their history
                 else:
                     resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
                     if resp.data:
