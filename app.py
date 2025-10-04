@@ -127,21 +127,32 @@ def predict_image(file_path):
     return "Healthy", 0.0
 
 # --------------------------
-# OpenCV Pest Highlight & Count
+# Improved OpenCV Pest Highlight & Count
 # --------------------------
 def highlight_pests_cv2(image_path):
     """Returns image with pests highlighted and pest count."""
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Simple threshold to find dark spots (pests/disease)
-    _, mask = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY_INV)
+    # Convert to HSV to detect dark/brown spots
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # Threshold for dark/brown spots (typical pests/disease)
+    lower = np.array([0, 30, 0])
+    upper = np.array([50, 255, 120])
+    mask = cv2.inRange(hsv, lower, upper)
+
+    # Remove small noise
+    kernel = np.ones((3,3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # Find contours
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pest_count = 0
     for c in contours:
-        if cv2.contourArea(c) > 20:
+        area = cv2.contourArea(c)
+        if 50 < area < 2000:  # ignore tiny spots and huge blobs
             x, y, w, h = cv2.boundingRect(c)
             cv2.rectangle(img_rgb, (x, y), (x+w, y+h), (255,0,0), 2)
             cv2.putText(img_rgb, "Pest/Disease", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,0,0), 1)
