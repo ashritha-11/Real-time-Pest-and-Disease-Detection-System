@@ -151,20 +151,24 @@ st.session_state["theme"] = st.sidebar.radio("Select Theme:", ["Light", "Dark"])
 # --------------------------
 if st.session_state["theme"] == "Dark":
     bg_color = "#000000"
-    header_bg = "#111111"
-    header_text = "white"
-    input_bg = "#1f1f1f"
-    input_text = "white"
-    btn_bg = "#333333"
-    btn_hover = "#555555"
+    header_bg = "#1a1a1a"
+    header_text = "#00ff99"  # light green header
+    input_bg = "#222222"
+    input_text = "#ffffff"
+    btn_bg = "#00cc66"
+    btn_hover = "#00994d"
+    info_bg = "#111111"
+    info_text = "#00ff99"
 else:
     bg_color = "#f5f5f5"
     header_bg = "#28a745"
-    header_text = "white"
+    header_text = "#ffffff"
     input_bg = "#ffffff"
-    input_text = "black"
+    input_text = "#000000"
     btn_bg = "#198754"
     btn_hover = "#157347"
+    info_bg = "#d1e7dd"
+    info_text = "#0f5132"
 
 st.markdown(f"""
 <style>
@@ -199,6 +203,13 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
 }}
 .stButton button:hover {{
     background-color: {btn_hover};
+}}
+
+/* Info boxes */
+.stInfo, .stWarning, .stError {{
+    background-color: {info_bg} !important;
+    color: {info_text} !important;
+    border-radius: 10px;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -253,16 +264,15 @@ elif choice == "Upload & Detect":
             st.image(save_path, use_container_width=True)
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
-                if prediction == "Healthy":
-                    st.success(f"✅ Prediction: {prediction} ({confidence*100:.1f}%)")
-                elif prediction == "Not Healthy":
-                    st.warning(f"⚠️ Prediction: {prediction} ({confidence*100:.1f}%)")
-                elif prediction == "Pest_Affected":
-                    st.error(f"🐛 Prediction: {prediction} ({confidence*100:.1f}%)")
-                elif prediction == "Disease_Affected":
-                    st.error(f"🍂 Prediction: {prediction} ({confidence*100:.1f}%)")
+                # Theme-aware colored outputs
+                if st.session_state["theme"] == "Dark":
+                    colors = {"Healthy": "#00ff99", "Not Healthy": "#ffcc00",
+                              "Pest_Affected": "#ff3300", "Disease_Affected": "#ff6600"}
                 else:
-                    st.info(f"❔ Prediction: {prediction}")
+                    colors = {"Healthy": "#198754", "Not Healthy": "#ffc107",
+                              "Pest_Affected": "#dc3545", "Disease_Affected": "#fd7e14"}
+                st.markdown(f"<p style='color:{colors.get(prediction,'white')};font-weight:bold'>"
+                            f"Prediction: {prediction} ({confidence*100:.1f}%)</p>", unsafe_allow_html=True)
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
 # ---------- History ----------
