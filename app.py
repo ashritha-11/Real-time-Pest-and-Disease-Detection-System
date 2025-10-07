@@ -8,6 +8,7 @@ import tensorflow as tf
 import os
 import pandas as pd
 import json
+import cv2
 
 # --------------------------
 # Supabase Setup
@@ -21,7 +22,6 @@ connection_status = "❌ Not Connected"
 try:
     if SUPABASE_URL and SUPABASE_KEY:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # Test connection
         _ = supabase.table("farmers").select("*").limit(1).execute()
         connection_status = "✅ Connected to Supabase"
     else:
@@ -94,7 +94,6 @@ LABELS_PATH = "models/class_indices.json"
 model = None
 idx_to_label = {0: "Healthy", 1: "Pest_Affected", 2: "Disease_Affected"}
 
-# Load model
 if os.path.exists(MODEL_PATH):
     try:
         model = tf.keras.models.load_model(MODEL_PATH)
@@ -102,7 +101,6 @@ if os.path.exists(MODEL_PATH):
         st.error(f"❌ Error loading model: {e}")
         model = None
 
-# Load label mapping
 if os.path.exists(LABELS_PATH):
     try:
         with open(LABELS_PATH, "r") as f:
@@ -112,36 +110,51 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Prediction Function
+# Prediction Function (Fixed)
 # --------------------------
-def predict_image(file_path, threshold=0.7):
-    if model:
+def predict_image(file_path, threshold_healthy=0.7):
+    if model is None:
+        st.error("❌ Model not loaded")
+        return "Unknown", 0.0
+
+    try:
         img = Image.open(file_path).convert("RGB")
-        arr = np.array(img)
-        arr = tf.image.resize(arr, (224, 224))
+        img_resized = img.resize((224, 224))
+        arr = np.array(img_resized) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # IMPORTANT: no normalization (your training didn’t use it)
-        arr = arr / 255.0
-
-        # Prediction
+        # Model prediction
         probs = model.predict(arr, verbose=0)[0]
-        idx = probs.argmax()
-        confidence = float(probs[idx])
-
+        idx = int(np.argmax(probs))
+        confidence = float(np.max(probs))
         label = idx_to_label.get(idx, "Unknown")
 
-        # Add safeguard for Healthy misclassification
-        if label == "Healthy" and confidence < threshold:
-            label = "Not Healthy"
+        # Convert to OpenCV for color and texture checks
+        cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+        # Mean color detection for brownish leaves
+        mean_color = cv2.mean(cv_img)[:3]
+        red, green, blue = mean_color
+        is_brownish = (red > 90 and red < 180) and (green > 60 and green < 160) and (blue < 130)
+
+        # Dark patches detection (possible pest)
+        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        dark_ratio = np.sum(gray < 60) / gray.size
+
+        # Logic correction
+        if label == "Healthy":
+            if confidence < threshold_healthy:
+                label = "Disease_Affected"
+            elif is_brownish:
+                label = "Disease_Affected"
+            elif dark_ratio > 0.10:
+                label = "Pest_Affected"
 
         return label, confidence
 
-    # fallback dummy prediction
-    width = Image.open(file_path).size[0]
-    if width % 3 == 0: return "Healthy", 0.95
-    if width % 3 == 1: return "Pest_Affected", 0.85
-    return "Disease_Affected", 0.90
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+        return "Unknown", 0.0
 
 # --------------------------
 # Streamlit UI
@@ -198,15 +211,12 @@ elif choice == "Upload & Detect":
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
                 
-                # Styled output
                 if prediction == "Healthy":
                     st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                elif prediction == "Not Healthy":
-                    st.warning(f"⚠️ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Pest_Affected":
                     st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 elif prediction == "Disease_Affected":
-                    st.error(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
+                    st.warning(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
                 else:
                     st.info(f"❔ Prediction: {prediction}")
 
@@ -220,7 +230,6 @@ elif choice == "History":
         st.subheader("📜 Detection History")
         if supabase:
             try:
-                # Admin sees all farmers
                 if st.session_state["role"].lower() == "admin":
                     farmers_resp = supabase.table("farmers").select("*").execute()
                     farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
@@ -249,22 +258,16 @@ elif choice == "History":
                             st.image(rec["image_url"], width=200)
                         st.markdown("---")
 
-                    # Download CSV
                     if records:
-                        df = pd.DataFrame([
-                            {
-                                "Farmer": rec.get("farmers", {}).get("username", ""),
-                                "Prediction": rec["prediction"],
-                                "Confidence": rec["confidence"],
-                                "Image URL": rec["image_url"],
-                                "Timestamp": rec["timestamp"]
-                            }
-                            for rec in records
-                        ])
+                        df = pd.DataFrame([{
+                            "Farmer": rec.get("farmers", {}).get("username", ""),
+                            "Prediction": rec["prediction"],
+                            "Confidence": rec["confidence"],
+                            "Image URL": rec["image_url"],
+                            "Timestamp": rec["timestamp"]
+                        } for rec in records])
                         csv = df.to_csv(index=False).encode("utf-8")
                         st.download_button("📥 Download CSV Report", csv, file_name="detection_report.csv")
-                
-                # Farmer sees only their history
                 else:
                     resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
                     if resp.data:
