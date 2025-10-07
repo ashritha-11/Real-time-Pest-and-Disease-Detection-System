@@ -141,36 +141,24 @@ if "user" not in st.session_state:
     st.session_state["user_id"] = None
 
 # --------------------------
-# Theme: Auto Detection + Manual Override
+# Theme Selection
 # --------------------------
 st.sidebar.markdown("### 🎨 Theme")
-manual_theme = st.sidebar.radio("Override Theme:", ["Auto", "Light", "Dark"])
-st.session_state["manual_theme"] = manual_theme
-
-if manual_theme == "Auto":
-    import streamlit.components.v1 as components
-    js_theme = """
-    <script>
-    const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Dark' : 'Light';
-    window.parent.document.querySelector('iframe').setAttribute('data-theme', theme);
-    </script>
-    """
-    components.html(js_theme)
-    st.session_state["theme"] = "Dark" if st.session_state.get("theme") == "Dark" else "Light"
-else:
-    st.session_state["theme"] = manual_theme
+st.session_state["theme"] = st.sidebar.radio("Select Theme:", ["Light", "Dark"])
 
 # --------------------------
-# Theme-Aware CSS for Header, Inputs, Buttons
+# Theme-Aware CSS
 # --------------------------
 if st.session_state["theme"] == "Dark":
-    header_bg = "#262730"
+    bg_color = "#000000"
+    header_bg = "#111111"
     header_text = "white"
-    input_bg = "#1f1f28"
+    input_bg = "#1f1f1f"
     input_text = "white"
-    btn_bg = "#3b3b3b"
-    btn_hover = "#565656"
+    btn_bg = "#333333"
+    btn_hover = "#555555"
 else:
+    bg_color = "#f5f5f5"
     header_bg = "#28a745"
     header_text = "white"
     input_bg = "#ffffff"
@@ -180,6 +168,11 @@ else:
 
 st.markdown(f"""
 <style>
+/* Page background */
+[data-testid="stAppViewContainer"] {{
+    background-color: {bg_color};
+}}
+
 /* Header */
 h1, h2, .stMarkdown h1, .stMarkdown h2 {{
     background-color: {header_bg};
@@ -188,6 +181,7 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
     border-radius: 10px;
     text-align: center;
 }}
+
 /* Input fields */
 .stTextInput input, .stPasswordInput input {{
     background-color: {input_bg};
@@ -195,6 +189,7 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
     border-radius: 10px;
     padding: 10px;
 }}
+
 /* Buttons */
 .stButton button {{
     background-color: {btn_bg};
@@ -276,7 +271,7 @@ elif choice == "History":
         st.warning("⚠ Please login first")
     else:
         st.subheader("📜 Detection History")
-        # (History logic same as before, theme-aware styles applied automatically)
+        # (History logic same as before)
 
 # ---------- Logout ----------
 st.markdown("---")
