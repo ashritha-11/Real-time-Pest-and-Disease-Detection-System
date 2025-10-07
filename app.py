@@ -132,52 +132,25 @@ def predict_image(file_path, threshold=0.7):
 # --------------------------
 st.set_page_config(page_title="🌿 Pest & Disease Detection System", layout="wide")
 
-if "theme" not in st.session_state:
-    st.session_state["theme"] = "Light"
-
-if "user" not in st.session_state:
-    st.session_state["user"] = None
-    st.session_state["role"] = None
-    st.session_state["user_id"] = None
-
 # --------------------------
-# Theme Selection
+# Dark Mode Colors
 # --------------------------
-st.sidebar.markdown("### 🎨 Theme")
-st.session_state["theme"] = st.sidebar.radio("Select Theme:", ["Light", "Dark"])
+bg_color = "#000000"
+header_bg = "#1a1a1a"
+header_text = "#00ff99"
+input_bg = "#222222"
+input_text = "#ffffff"
+btn_bg = "#00cc66"
+btn_hover = "#00994d"
+info_bg = "#111111"
+info_text = "#00ff99"
 
-# --------------------------
-# Theme-Aware CSS
-# --------------------------
-if st.session_state["theme"] == "Dark":
-    bg_color = "#000000"
-    header_bg = "#1a1a1a"
-    header_text = "#00ff99"  # light green header
-    input_bg = "#222222"
-    input_text = "#ffffff"
-    btn_bg = "#00cc66"
-    btn_hover = "#00994d"
-    info_bg = "#111111"
-    info_text = "#00ff99"
-else:
-    bg_color = "#f5f5f5"
-    header_bg = "#28a745"
-    header_text = "#ffffff"
-    input_bg = "#ffffff"
-    input_text = "#000000"
-    btn_bg = "#198754"
-    btn_hover = "#157347"
-    info_bg = "#d1e7dd"
-    info_text = "#0f5132"
-
+# Apply CSS for dark mode
 st.markdown(f"""
 <style>
-/* Page background */
 [data-testid="stAppViewContainer"] {{
     background-color: {bg_color};
 }}
-
-/* Header */
 h1, h2, .stMarkdown h1, .stMarkdown h2 {{
     background-color: {header_bg};
     color: {header_text};
@@ -185,16 +158,12 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
     border-radius: 10px;
     text-align: center;
 }}
-
-/* Input fields */
 .stTextInput input, .stPasswordInput input {{
     background-color: {input_bg};
     color: {input_text};
     border-radius: 10px;
     padding: 10px;
 }}
-
-/* Buttons */
 .stButton button {{
     background-color: {btn_bg};
     color: white;
@@ -204,8 +173,6 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
 .stButton button:hover {{
     background-color: {btn_hover};
 }}
-
-/* Info boxes */
 .stInfo, .stWarning, .stError {{
     background-color: {info_bg} !important;
     color: {info_text} !important;
@@ -219,6 +186,14 @@ h1, h2, .stMarkdown h1, .stMarkdown h2 {{
 # --------------------------
 st.markdown(f"## 🌿 Real-time Pest & Disease Detection System")
 st.info(f"Supabase Status: {connection_status}")
+
+# --------------------------
+# Session state
+# --------------------------
+if "user" not in st.session_state:
+    st.session_state["user"] = None
+    st.session_state["role"] = None
+    st.session_state["user_id"] = None
 
 # --------------------------
 # Sidebar Menu
@@ -262,17 +237,17 @@ elif choice == "Upload & Detect":
             with open(save_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.image(save_path, use_container_width=True)
+
             if st.button("Run Detection"):
                 prediction, confidence = predict_image(save_path)
-                # Theme-aware colored outputs
-                if st.session_state["theme"] == "Dark":
-                    colors = {"Healthy": "#00ff99", "Not Healthy": "#ffcc00",
-                              "Pest_Affected": "#ff3300", "Disease_Affected": "#ff6600"}
-                else:
-                    colors = {"Healthy": "#198754", "Not Healthy": "#ffc107",
-                              "Pest_Affected": "#dc3545", "Disease_Affected": "#fd7e14"}
-                st.markdown(f"<p style='color:{colors.get(prediction,'white')};font-weight:bold'>"
-                            f"Prediction: {prediction} ({confidence*100:.1f}%)</p>", unsafe_allow_html=True)
+
+                # Prediction colors for dark mode
+                colors = {"Healthy": "#00ff99", "Not Healthy": "#ffcc00",
+                          "Pest_Affected": "#ff3300", "Disease_Affected": "#ff6600"}
+                st.markdown(f"<p style='color:{colors.get(prediction,'white')};"
+                            f"font-weight:bold'>Prediction: {prediction} ({confidence*100:.1f}%)</p>",
+                            unsafe_allow_html=True)
+
                 save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
 # ---------- History ----------
@@ -281,7 +256,48 @@ elif choice == "History":
         st.warning("⚠ Please login first")
     else:
         st.subheader("📜 Detection History")
-        # (History logic same as before)
+        if supabase:
+            try:
+                if st.session_state["role"].lower() == "admin":
+                    farmers_resp = supabase.table("farmers").select("*").execute()
+                    farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
+                    selected_farmer = st.selectbox("Filter by Farmer", ["All"] + farmers_list)
+                    query = supabase.table("detection_records").select(
+                        "id, farmer_id, prediction, confidence, image_url, timestamp, farmers(username)"
+                    ).order("timestamp", desc=True)
+                    if selected_farmer != "All":
+                        farmer_id = next((f["farmer_id"] for f in farmers_resp.data if f["username"]==selected_farmer), None)
+                        query = query.eq("farmer_id", farmer_id)
+                    resp = query.execute()
+                    records = resp.data if resp.data else []
+                    for rec in records:
+                        farmer_name = rec.get("farmers", {}).get("username", "Unknown")
+                        st.markdown(f"**Farmer:** {farmer_name}  \n**Prediction:** {rec['prediction']}  \n**Confidence:** {rec['confidence']*100:.1f}%  \n**Timestamp:** {rec['timestamp']}")
+                        if rec.get("image_url"):
+                            st.image(rec["image_url"], width=200)
+                        st.markdown("---")
+                    if records:
+                        df = pd.DataFrame([{"Farmer": rec.get("farmers", {}).get("username", ""),
+                                            "Prediction": rec["prediction"],
+                                            "Confidence": rec["confidence"],
+                                            "Image URL": rec["image_url"],
+                                            "Timestamp": rec["timestamp"]} for rec in records])
+                        csv = df.to_csv(index=False).encode("utf-8")
+                        st.download_button("📥 Download CSV Report", csv, file_name="detection_report.csv")
+                else:
+                    resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
+                    if resp.data:
+                        for rec in resp.data:
+                            st.markdown(f"**Prediction:** {rec['prediction']}  \n**Confidence:** {rec['confidence']*100:.1f}%  \n**Timestamp:** {rec['timestamp']}")
+                            if rec.get("image_url"):
+                                st.image(rec["image_url"], width=200)
+                            st.markdown("---")
+                    else:
+                        st.info("No records found.")
+            except Exception as e:
+                st.error(f"History error: {e}")
+        else:
+            st.warning("⚠ Supabase not connected")
 
 # ---------- Logout ----------
 st.markdown("---")
