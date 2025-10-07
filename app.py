@@ -128,44 +128,40 @@ def predict_image(file_path, threshold=0.7):
     return "Unknown", 0.0
 
 # --------------------------
-# Streamlit UI with Auto Theme
+# Streamlit UI Setup
 # --------------------------
 st.set_page_config(page_title="🌿 Pest & Disease Detection System", layout="wide")
 
 # Initialize session state
 if "theme" not in st.session_state:
-    st.session_state["theme"] = "Light"  # default
+    st.session_state["theme"] = "Light"
 
-# Sidebar for manual theme override
+if "user" not in st.session_state:
+    st.session_state["user"] = None
+    st.session_state["role"] = None
+    st.session_state["user_id"] = None
+
+# --------------------------
+# Theme: Auto Detection + Manual Override
+# --------------------------
 st.sidebar.markdown("### 🎨 Theme")
-manual_theme = st.sidebar.radio("Override Theme (optional):", ["Auto", "Light", "Dark"])
+manual_theme = st.sidebar.radio("Override Theme:", ["Auto", "Light", "Dark"])
 st.session_state["manual_theme"] = manual_theme
 
-# JS script to detect system dark mode
 if manual_theme == "Auto":
-    st.write(
-        """
-        <script>
-        const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        window.parent.document.querySelector('iframe').style.backgroundColor = isDark ? '#0e1117' : '#ffffff';
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
     import streamlit.components.v1 as components
     js_theme = """
-        <script>
-        const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Dark' : 'Light';
-        window.parent.document.querySelector('iframe').setAttribute('data-theme', theme);
-        </script>
+    <script>
+    const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Dark' : 'Light';
+    window.parent.document.querySelector('iframe').setAttribute('data-theme', theme);
+    </script>
     """
     components.html(js_theme)
-    # fallback
-    st.session_state["theme"] = "Dark" if st.session_state.get("manual_theme") == "Auto" else "Light"
+    st.session_state["theme"] = "Dark" if st.session_state.get("theme") == "Dark" else "Light"
 else:
     st.session_state["theme"] = manual_theme
 
-# Apply theme CSS
+# Apply CSS per theme
 if st.session_state["theme"] == "Dark":
     st.markdown(
         """
@@ -177,7 +173,7 @@ if st.session_state["theme"] == "Dark":
         .stButton button:hover { background-color: #565656; }
         </style>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 else:
     st.markdown(
@@ -190,7 +186,7 @@ else:
         .stButton button:hover { background-color: #157347; }
         </style>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
 # --------------------------
@@ -209,6 +205,102 @@ st.markdown(
 st.info(f"Supabase Status: {connection_status}")
 
 # --------------------------
-# Remaining app logic: Login, Register, Upload & Detect, History, Logout
+# Sidebar Menu
 # --------------------------
-# (Keep your previous logic here exactly the same)
+menu = ["Login", "Register", "Upload & Detect", "History"]
+choice = st.sidebar.selectbox("📋 Menu", menu)
+role = st.sidebar.radio("Role", ["Farmer", "Admin"])
+
+# ---------- Login ----------
+if choice == "Login":
+    st.subheader("🔐 Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        user = login_user(username, password, role)
+        if user:
+            st.session_state["user"] = username
+            st.session_state["role"] = role
+            st.session_state["user_id"] = user[f"{role.lower()}_id"]
+            st.success(f"✅ Welcome, {username}! Logged in as {role}.")
+        else:
+            st.error("❌ Invalid credentials or user not found.")
+
+# ---------- Register ----------
+elif choice == "Register":
+    st.subheader("📝 Register")
+    username = st.text_input("New Username")
+    password = st.text_input("New Password", type="password")
+    if st.button("Register"):
+        register_user(username, password, role)
+
+# ---------- Upload & Detect ----------
+elif choice == "Upload & Detect":
+    if not st.session_state["user"]:
+        st.warning("⚠ Please login first")
+    elif st.session_state["role"].lower() == "farmer":
+        st.subheader("📤 Upload Crop Image")
+        uploaded_file = st.file_uploader("Choose an image...", type=["jpg","png","jpeg"])
+        if uploaded_file:
+            save_path = f"{st.session_state['user']}_{uploaded_file.name}"
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.image(save_path, use_container_width=True)
+            if st.button("Run Detection"):
+                prediction, confidence = predict_image(save_path)
+                if prediction == "Healthy":
+                    st.success(f"✅ Prediction: {prediction} ({confidence*100:.1f}%)")
+                elif prediction == "Not Healthy":
+                    st.warning(f"⚠️ Prediction: {prediction} ({confidence*100:.1f}%)")
+                elif prediction == "Pest_Affected":
+                    st.error(f"🐛 Prediction: {prediction} ({confidence*100:.1f}%)")
+                elif prediction == "Disease_Affected":
+                    st.error(f"🍂 Prediction: {prediction} ({confidence*100:.1f}%)")
+                else:
+                    st.info(f"❔ Prediction: {prediction}")
+                save_detection(st.session_state["user_id"], prediction, confidence, save_path)
+
+# ---------- History ----------
+elif choice == "History":
+    if not st.session_state["user"]:
+        st.warning("⚠ Please login first")
+    else:
+        st.subheader("📜 Detection History")
+        if supabase:
+            try:
+                if st.session_state["role"].lower() == "admin":
+                    farmers_resp = supabase.table("farmers").select("*").execute()
+                    farmers_list = [f["username"] for f in farmers_resp.data] if farmers_resp.data else []
+                    selected_farmer = st.selectbox("Filter by Farmer", ["All"] + farmers_list)
+                    query = supabase.table("detection_records").select(
+                        "id, farmer_id, prediction, confidence, image_url, timestamp, farmers(username)"
+                    ).order("timestamp", desc=True)
+                    if selected_farmer != "All":
+                        farmer_id = next((f["farmer_id"] for f in farmers_resp.data if f["username"] == selected_farmer), None)
+                        query = query.eq("farmer_id", farmer_id)
+                    resp = query.execute()
+                    records = resp.data if resp.data else []
+                    for rec in records:
+                        farmer_name = rec.get("farmers", {}).get("username", "Unknown")
+                        st.markdown(f"**Farmer:** {farmer_name}  \n**Prediction:** {rec['prediction']}  \n**Confidence:** {rec['confidence']*100:.1f}%  \n**Timestamp:** {rec['timestamp']}")
+                        if rec.get("image_url"): st.image(rec["image_url"], width=200)
+                        st.markdown("---")
+                else:
+                    resp = supabase.table("detection_records").select("*").eq("farmer_id", st.session_state["user_id"]).order("timestamp", desc=True).execute()
+                    if resp.data:
+                        for rec in resp.data:
+                            st.markdown(f"**Prediction:** {rec['prediction']}  \n**Confidence:** {rec['confidence']*100:.1f}%  \n**Timestamp:** {rec['timestamp']}")
+                            if rec.get("image_url"): st.image(rec["image_url"], width=200)
+                            st.markdown("---")
+                    else:
+                        st.info("No records found.")
+            except Exception as e:
+                st.error(f"History error: {e}")
+        else:
+            st.warning("⚠ Supabase not connected")
+
+# ---------- Logout ----------
+st.markdown("---")
+if st.button("🚪 Logout"):
+    st.session_state.clear()
+    st.rerun()
