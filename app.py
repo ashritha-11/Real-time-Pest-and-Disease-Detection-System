@@ -11,6 +11,42 @@ import json
 import cv2
 
 # --------------------------
+# Streamlit Page Config & Styling
+# --------------------------
+st.set_page_config(page_title="🌱 Pest & Disease Detection", layout="wide")
+
+st.markdown("""
+    <style>
+        body {
+            background-color: #f5fff5;
+        }
+        .main {
+            background-color: #ffffff;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0px 4px 10px rgba(0, 128, 0, 0.2);
+        }
+        .stButton>button {
+            background-color: #2e8b57;
+            color: white;
+            border-radius: 10px;
+            height: 3em;
+            width: 100%;
+            font-size: 16px;
+        }
+        .stButton>button:hover {
+            background-color: #228b22;
+        }
+        .prediction-box {
+            background-color: #f0fff0;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0px 3px 8px rgba(0, 100, 0, 0.2);
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# --------------------------
 # Supabase Setup
 # --------------------------
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
@@ -31,14 +67,11 @@ except Exception as e:
     supabase = None
 
 # --------------------------
-# Hashing
+# Utility Functions
 # --------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# --------------------------
-# Auth Functions
-# --------------------------
 def register_user(username, password, role):
     table = "farmers" if role.lower() == "farmer" else "admins"
     if supabase:
@@ -67,9 +100,6 @@ def login_user(username, password, role):
             st.error(f"Login error: {e}")
     return None
 
-# --------------------------
-# Detection Save
-# --------------------------
 def save_detection(farmer_id, prediction, confidence, image_url):
     if supabase:
         try:
@@ -87,7 +117,7 @@ def save_detection(farmer_id, prediction, confidence, image_url):
         st.warning("⚠ Supabase not available")
 
 # --------------------------
-# ML Model Setup
+# Model Setup
 # --------------------------
 MODEL_PATH = "models/cnn_model.h5"
 LABELS_PATH = "models/class_indices.json"
@@ -110,7 +140,7 @@ if os.path.exists(LABELS_PATH):
         st.warning(f"⚠ Could not load class indices: {e}")
 
 # --------------------------
-# Prediction Function (Fixed)
+# Prediction Function (Fixed & Enhanced)
 # --------------------------
 def predict_image(file_path, threshold_healthy=0.7):
     if model is None:
@@ -123,25 +153,19 @@ def predict_image(file_path, threshold_healthy=0.7):
         arr = np.array(img_resized) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # Model prediction
         probs = model.predict(arr, verbose=0)[0]
         idx = int(np.argmax(probs))
         confidence = float(np.max(probs))
         label = idx_to_label.get(idx, "Unknown")
 
-        # Convert to OpenCV for color and texture checks
         cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-
-        # Mean color detection for brownish leaves
         mean_color = cv2.mean(cv_img)[:3]
         red, green, blue = mean_color
         is_brownish = (red > 90 and red < 180) and (green > 60 and green < 160) and (blue < 130)
 
-        # Dark patches detection (possible pest)
         gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
         dark_ratio = np.sum(gray < 60) / gray.size
 
-        # Logic correction
         if label == "Healthy":
             if confidence < threshold_healthy:
                 label = "Disease_Affected"
@@ -159,9 +183,9 @@ def predict_image(file_path, threshold_healthy=0.7):
 # --------------------------
 # Streamlit UI
 # --------------------------
-st.set_page_config(page_title="🌱 Pest & Disease Detection System", layout="wide")
-st.title("🌱 Real-time Pest & Disease Detection System")
-st.info(f"Supabase Status: {connection_status}")
+st.title("🌿 Real-time Pest & Disease Detection System")
+st.caption("Powered by Deep Learning & Supabase")
+st.info(f"Supabase Connection: {connection_status}")
 
 if "user" not in st.session_state:
     st.session_state["user"] = None
@@ -169,58 +193,65 @@ if "user" not in st.session_state:
     st.session_state["user_id"] = None
 
 menu = ["Login", "Register", "Upload & Detect", "History"]
-choice = st.sidebar.selectbox("Menu", menu)
-role = st.sidebar.radio("Role", ["Farmer", "Admin"])
+choice = st.sidebar.selectbox("📋 Menu", menu)
+role = st.sidebar.radio("👤 Role", ["Farmer", "Admin"])
 
 # ---------- Login ----------
 if choice == "Login":
-    st.subheader("🔐 Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        user = login_user(username, password, role)
-        if user:
-            st.session_state["user"] = username
-            st.session_state["role"] = role
-            st.session_state["user_id"] = user[f"{role.lower()}_id"]
-            st.success(f"Welcome, {username}! Logged in as {role}.")
-        else:
-            st.error("❌ Invalid credentials or user not found.")
+    with st.container():
+        st.subheader("🔐 Login to Your Account")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            user = login_user(username, password, role)
+            if user:
+                st.session_state["user"] = username
+                st.session_state["role"] = role
+                st.session_state["user_id"] = user[f"{role.lower()}_id"]
+                st.success(f"Welcome, {username}! Logged in as {role}.")
+            else:
+                st.error("❌ Invalid credentials or user not found.")
 
 # ---------- Register ----------
 elif choice == "Register":
-    st.subheader("📝 Register")
-    username = st.text_input("New Username")
-    password = st.text_input("New Password", type="password")
-    if st.button("Register"):
-        register_user(username, password, role)
+    with st.container():
+        st.subheader("📝 Create a New Account")
+        username = st.text_input("New Username")
+        password = st.text_input("New Password", type="password")
+        if st.button("Register"):
+            register_user(username, password, role)
 
 # ---------- Upload & Detect ----------
 elif choice == "Upload & Detect":
     if not st.session_state["user"]:
         st.warning("⚠ Please login first")
     elif st.session_state["role"].lower() == "farmer":
-        st.subheader("📤 Upload Crop Image")
+        st.subheader("📤 Upload Your Crop Leaf Image")
         uploaded_file = st.file_uploader("Choose an image...", type=["jpg","png","jpeg"])
         if uploaded_file:
             save_path = f"{st.session_state['user']}_{uploaded_file.name}"
             with open(save_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            st.image(save_path, use_container_width=True)
 
-            if st.button("Run Detection"):
-                prediction, confidence = predict_image(save_path)
-                
-                if prediction == "Healthy":
-                    st.success(f"✅ Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                elif prediction == "Pest_Affected":
-                    st.error(f"🐛 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                elif prediction == "Disease_Affected":
-                    st.warning(f"🍂 Prediction: {prediction} (Confidence: {confidence*100:.1f}%)")
-                else:
-                    st.info(f"❔ Prediction: {prediction}")
+            col1, col2 = st.columns([1, 1.2])
+            with col1:
+                st.image(save_path, caption="Uploaded Leaf", use_container_width=True)
 
-                save_detection(st.session_state["user_id"], prediction, confidence, save_path)
+            with col2:
+                if st.button("Run Detection", use_container_width=True):
+                    prediction, confidence = predict_image(save_path)
+                    with st.container():
+                        st.markdown('<div class="prediction-box">', unsafe_allow_html=True)
+                        if prediction == "Healthy":
+                            st.success(f"✅ **Prediction:** {prediction}\n\n**Confidence:** {confidence*100:.1f}%")
+                        elif prediction == "Pest_Affected":
+                            st.error(f"🐛 **Prediction:** {prediction}\n\n**Confidence:** {confidence*100:.1f}%")
+                        elif prediction == "Disease_Affected":
+                            st.warning(f"🍂 **Prediction:** {prediction}\n\n**Confidence:** {confidence*100:.1f}%")
+                        else:
+                            st.info(f"❔ Prediction: {prediction}")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    save_detection(st.session_state["user_id"], prediction, confidence, save_path)
 
 # ---------- History ----------
 elif choice == "History":
@@ -247,9 +278,8 @@ elif choice == "History":
                     records = resp.data if resp.data else []
 
                     for rec in records:
-                        farmer_name = rec.get("farmers", {}).get("username", "Unknown")
                         st.markdown(f"""
-                            **Farmer:** {farmer_name}  
+                            **Farmer:** {rec.get("farmers", {}).get("username", "Unknown")}  
                             **Prediction:** {rec['prediction']}  
                             **Confidence:** {rec['confidence']*100:.1f}%  
                             **Timestamp:** {rec['timestamp']}  
